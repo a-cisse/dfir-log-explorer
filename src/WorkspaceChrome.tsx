@@ -52,7 +52,7 @@ export function Sidebar({
       </div>
       <div className="workspace-label">
         <span>WORKSPACE</span>
-        <span className="version-tag">MVP 0</span>
+        <span className="version-tag">MVP 1</span>
       </div>
       <nav>
         {(
@@ -145,6 +145,7 @@ export function Sidebar({
   );
 }
 export function Topbar({
+  caseName,
   source,
   busy,
   search,
@@ -154,6 +155,7 @@ export function Topbar({
   themeControl,
 }: {
   source: SourceSummary | null;
+  caseName: string;
   busy: boolean;
   search: string;
   setSearch: (value: string) => void;
@@ -166,7 +168,7 @@ export function Topbar({
       <div className="breadcrumbs">
         <span>Workspace</span>
         <ChevronRight size={13} />
-        <strong>Temporary session</strong>
+        <strong>{caseName}</strong>
       </div>
       <div className="global-search">
         <Search size={16} />
@@ -256,6 +258,8 @@ export function PageHeading({
           >
             <option value="auto">Auto detect</option>
             <option value="apache">Apache Common / Combined</option>
+            <option value="nginx">Nginx Access</option>
+            <option value="json_lines">JSON Lines</option>
             <option value="text">Plain text</option>
           </select>
         </label>

@@ -245,7 +245,7 @@ test("themes, navigation, evidence, inspector closure and desktop dimensions", a
   ).toBeVisible();
   await expect(page.locator(".hash-value")).toHaveText(/[a-f0-9]{64}/);
   await page.getByRole("button", { name: "Parsers", exact: true }).click();
-  await expect(page.locator(".parser-card")).toHaveCount(3);
+  await expect(page.locator(".parser-card")).toHaveCount(5);
   await page
     .getByRole("button", { name: "Select parser", exact: true })
     .first()
@@ -308,4 +308,39 @@ test("keyboard navigation and clipboard preserve complete selected raw content",
   await page.keyboard.press("Escape");
   await page.getByLabel("Timeline distribution").selectOption("http");
   await expect(page.locator(".chart-legend")).toContainText("2xx");
+});
+
+test("case controls, source provenance and timestamp filters are usable", async ({
+  page,
+}) => {
+  await loadSample(page);
+  await page.getByLabel("Parser format").selectOption("nginx");
+  await page.getByLabel("Parser format").selectOption("json_lines");
+  await page.getByLabel("Parser format").selectOption("auto");
+  await expect(page.getByLabel("Case management")).toContainText(
+    "Temporary case",
+  );
+  await expect(page.getByLabel("Case management")).toContainText("1 sources");
+  await page.getByRole("button", { name: "Save case as…" }).click();
+  await expect(page.getByRole("alert")).toContainText("desktop application");
+  await page.getByRole("combobox", { name: "Source filter" }).selectOption("1");
+  await page
+    .getByRole("combobox", { name: "Timestamp presence" })
+    .selectOption("false");
+  await expect(page.getByText("1–2 of 2 events")).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Reader filter" })
+    .selectOption("apache");
+  await expect(page.getByText("1–1 of 1 events")).toBeVisible();
+  await page.locator(".table-row").click();
+  await expect(page.locator(".event-provenance")).toContainText("Source #1");
+  await expect(page.locator(".event-provenance")).toContainText("SHA-256:");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.getByText("1–13 of 13 events")).toBeVisible();
+  await page.getByRole("button", { name: "New case", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "A clearer view of your logs." }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Case management")).toContainText("0 sources");
 });

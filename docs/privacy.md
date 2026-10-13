@@ -4,15 +4,17 @@
 
 No log content, metadata, source hashes, queries, usage events, or crash reports are intentionally sent to an external service. All UI assets are packaged locally. No account, API key, cloud backend, analytics SDK, remote parser download, HTTP plugin, or application updater is present.
 
-The Rust core disables DuckDB external file/network access and automatic extension installation/loading. It reads only the selected source through its own reader. The packaged webview's CSP allows only application resources and local IPC.
+The Rust core disables DuckDB external file/network access and automatic extension installation/loading. It reads only selected local sources and case files through native dialogs and the engine. The packaged webview's CSP allows only application resources and local IPC.
 
 The browser preview is explicitly limited to a bundled synthetic fixture. It refuses local file imports and has no upload API. Browser network-request tests cover this preview; they do not prove native-process behavior on every platform.
 
 ## Local artifacts
 
-The engine writes decoded events, original bytes, extracted fields, and query spill data into a unique `dfir-log-explorer-*` directory beneath the OS temporary directory. These files are not encrypted by the application. Use local storage appropriate for the sensitivity of your evidence; operating-system disk encryption is the initial protection at rest.
+Unsaved cases write decoded events, original bytes, extracted fields, and query spill data into a unique `dfir-log-explorer-*` directory beneath the OS temporary directory. These files are not encrypted by the application. Use local storage appropriate for the sensitivity of your evidence; operating-system disk encryption is the initial protection at rest.
 
-Normal engine teardown removes the temporary directory. A crash, power loss, or forced termination can leave files behind. MVP 0 does not automatically delete unidentified old directories. Deleting a file is not a guarantee of secure erasure on SSDs or backed-up filesystems.
+Normal engine teardown removes the temporary directory. A crash, power loss, or forced termination can leave files behind. The application does not automatically delete unidentified old directories. Deleting a file is not a guarantee of secure erasure on SSDs or backed-up filesystems.
+
+Saved `.dfir` cases retain raw evidence, normalized fields, original JSON fields, source paths, SHA-256 hashes and source summaries at the location explicitly selected by the user. They are not deleted on exit. DuckDB may create an adjacent write-ahead log while a case is open; close the case/application before copying it or making a backup. Searches and filters are not saved in the case. There is no application encryption, secure erase, source removal or automatic recovery/migration of unknown schema versions.
 
 Technical startup errors contain no log payloads. The UI displays import errors locally. The application does not create diagnostic files containing events or automatically upload debugging output.
 

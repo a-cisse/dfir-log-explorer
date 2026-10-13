@@ -1,4 +1,4 @@
-export type ParserMode = "auto" | "apache" | "text";
+export type ParserMode = "auto" | "apache" | "nginx" | "json_lines" | "text";
 export type ParseStatus = "parsed" | "partial" | "unparsed";
 export type SearchField =
   | "all"
@@ -13,6 +13,7 @@ export type SearchField =
   | "referrer"
   | "userAgent";
 export type SortField =
+  | "sourceId"
   | "lineNumber"
   | "timestamp"
   | "sourceIp"
@@ -35,6 +36,7 @@ export interface ImportProgress {
   elapsedMs: number;
 }
 export interface SourceSummary {
+  id: number;
   name: string;
   provenance: string;
   parserMode: ParserMode;
@@ -49,6 +51,7 @@ export interface SourceSummary {
   elapsedMs: number;
 }
 export interface EventRow {
+  sourceId: number;
   id: number;
   lineNumber: number;
   byteOffset: number;
@@ -70,8 +73,22 @@ export interface EventRow {
 export interface EventDetail extends EventRow {
   raw: string;
   rawHex: string | null;
+  jsonFields?: Record<string, unknown>;
+}
+export interface JsonFilter {
+  key: string;
+  value: string;
+}
+export interface CaseSummary {
+  name: string;
+  path: string | null;
+  sources: SourceSummary[];
 }
 export interface Query {
+  sourceId?: number | null;
+  parser?: ParserMode | null;
+  hasTimestamp?: boolean | null;
+  jsonFilter?: JsonFilter | null;
   search: string;
   onlyWarnings: boolean;
   offset: number;
@@ -114,6 +131,10 @@ export interface QueryPage {
 }
 export interface Bridge {
   isDesktop: boolean;
+  caseSummary(): Promise<CaseSummary>;
+  saveCase(): Promise<CaseSummary | null>;
+  openCase(): Promise<CaseSummary | null>;
+  closeCase(): Promise<CaseSummary>;
   pickFile(): Promise<string | null>;
   importFile(
     mode: ParserMode,

@@ -16,8 +16,9 @@ import {
 import { displayTimestamp, formatBytes } from "./format";
 import { ParsingStatusBadge } from "./ParsingStatusBadge";
 import { usePreference } from "./preferences";
-import type { EventRow, SortField } from "./types";
+import type { EventRow, SortField, SourceSummary } from "./types";
 const columnOptions: { key: SortField; label: string; size: number }[] = [
+  { key: "sourceId", label: "Source", size: 200 },
   { key: "lineNumber", label: "Line", size: 64 },
   { key: "timestamp", label: "Timestamp / source offset", size: 242 },
   { key: "sourceIp", label: "Client IP", size: 142 },
@@ -31,6 +32,7 @@ const columnOptions: { key: SortField; label: string; size: number }[] = [
   { key: "preview", label: "Raw log preview", size: 340 },
 ];
 const defaultColumns: SortField[] = [
+  "sourceId",
   "lineNumber",
   "timestamp",
   "sourceIp",
@@ -41,6 +43,7 @@ const defaultColumns: SortField[] = [
   "preview",
 ];
 interface Props {
+  sources: SourceSummary[];
   rows: EventRow[];
   selectedId: number | null;
   onSelect: (row: EventRow) => void;
@@ -51,6 +54,7 @@ interface Props {
   onSort: (key: SortField) => void;
 }
 export function EventTable({
+  sources,
   rows,
   selectedId,
   onSelect,
@@ -79,6 +83,16 @@ export function EventTable({
         size: c.size,
         cell: ({ getValue }) => {
           const value = getValue<string | number | null>();
+          if (c.key === "sourceId")
+            return (
+              <span
+                className="cell-value"
+                title={sources.find((s) => s.id === value)?.provenance}
+              >
+                #{value} ·{" "}
+                {sources.find((s) => s.id === value)?.name ?? "Unknown source"}
+              </span>
+            );
           if (c.key === "parseStatus")
             return (
               <ParsingStatusBadge status={value as EventRow["parseStatus"]} />
@@ -116,7 +130,7 @@ export function EventTable({
           );
         },
       })),
-    [],
+    [sources],
   );
   const table = useReactTable({
     data: rows,
@@ -124,7 +138,11 @@ export function EventTable({
     getCoreRowModel: getCoreRowModel(),
     state: {
       columnVisibility: Object.fromEntries(
-        columnOptions.map((c) => [c.key, visible.includes(c.key)]),
+        columnOptions.map((c) => [
+          c.key,
+          visible.includes(c.key) ||
+            (c.key === "sourceId" && sources.length > 1),
+        ]),
       ),
     },
   });
@@ -182,8 +200,14 @@ export function EventTable({
                 <label key={c.key}>
                   <input
                     type="checkbox"
-                    checked={visible.includes(c.key)}
-                    disabled={c.key === "lineNumber"}
+                    checked={
+                      visible.includes(c.key) ||
+                      (c.key === "sourceId" && sources.length > 1)
+                    }
+                    disabled={
+                      c.key === "lineNumber" ||
+                      (c.key === "sourceId" && sources.length > 1)
+                    }
                     onChange={(e) =>
                       setVisible(
                         e.target.checked

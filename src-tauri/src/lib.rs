@@ -1,5 +1,5 @@
 use dfir_log_core::{
-    Engine, EventDetail, ImportProgress, ParserMode, Query, QueryPage, SourceSummary,
+    CaseSummary, Engine, EventDetail, ImportProgress, ParserMode, Query, QueryPage, SourceSummary,
 };
 use std::{
     io::Write,
@@ -43,7 +43,10 @@ async fn pick_file(
         let file = app
             .dialog()
             .file()
-            .add_filter("Log and text files", &["log", "txt", "access", "out"])
+            .add_filter(
+                "Log and text files",
+                &["log", "txt", "access", "out", "jsonl", "ndjson", "json"],
+            )
             .add_filter("All files", &["*"])
             .blocking_pick_file();
         let Some(file) = file else { return Ok(None) };
@@ -118,25 +121,31 @@ async fn start_import(
                 path
             }
         };
-        let result = engine
-            .lock()
-            .map_err(|_| lock_error())?
-            .as_mut()
-            .ok_or_else(lock_error)?
-            .import(&source_path, mode, &cancelled, |progress| {
-                if on_progress.send(progress).is_err() {
-                    cancelled.store(true, Ordering::Relaxed);
-                }
-            })
-            .map_err(|error| error.to_string());
+        let mut locked = engine.lock().map_err(|_| lock_error())?;
+        let engine = locked.as_mut().ok_or_else(lock_error)?;
+        let identity = if is_demo {
+            Some((
+                "apache-mixed.log (synthetic sample)",
+                "Bundled synthetic fixture",
+            ))
+        } else {
+            None
+        };
+        let summary = engine
+            .import_with_identity(
+                &source_path,
+                mode,
+                &cancelled,
+                |progress| {
+                    if on_progress.send(progress).is_err() {
+                        cancelled.store(true, Ordering::Relaxed);
+                    }
+                },
+                identity,
+            )
+            .map_err(|error| error.to_string())?;
         drop(sample);
-        result.map(|mut summary| {
-            if is_demo {
-                summary.name = "apache-mixed.log (synthetic sample)".into();
-                summary.provenance = "Bundled synthetic fixture".into();
-            }
-            summary
-        })
+        Ok(summary)
     })
     .await
     .map_err(|_| lock_error())?
@@ -185,6 +194,113 @@ async fn event_detail(id: u64, state: State<'_, AppState>) -> Result<EventDetail
     .map_err(|_| lock_error())?
 }
 
+#[tauri::command]
+async fn case_summary(state: State<'_, AppState>) -> Result<CaseSummary, String> {
+    if state.busy.load(Ordering::Acquire) {
+        return Err("Wait for the current operation to finish.".into());
+    }
+    let engine = Arc::clone(&state.engine);
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .lock()
+            .map_err(|_| lock_error())?
+            .as_ref()
+            .ok_or_else(lock_error)?
+            .case_summary()
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|_| lock_error())?
+}
+
+#[tauri::command]
+async fn save_case(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<CaseSummary>, String> {
+    change_case(app, state, true).await
+}
+
+#[tauri::command]
+async fn open_case(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<CaseSummary>, String> {
+    change_case(app, state, false).await
+}
+
+async fn change_case(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    save: bool,
+) -> Result<Option<CaseSummary>, String> {
+    state
+        .busy
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .map_err(|_| "Wait for the current operation to finish.".to_string())?;
+    let guard = BusyGuard(Arc::clone(&state.busy));
+    let engine = Arc::clone(&state.engine);
+    let selected = Arc::clone(&state.selected);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        let picker = app.dialog().file().add_filter("DFIR case", &["dfir"]);
+        let file = if save {
+            picker
+                .set_file_name("investigation.dfir")
+                .blocking_save_file()
+        } else {
+            picker.blocking_pick_file()
+        };
+        let Some(file) = file else {
+            return Ok(None);
+        };
+        let mut path = file
+            .into_path()
+            .map_err(|_| "Select a local case file.".to_string())?;
+        if save && path.extension().is_none() {
+            path.set_extension("dfir");
+        }
+        let mut locked = engine.lock().map_err(|_| lock_error())?;
+        let summary = if save {
+            locked
+                .as_mut()
+                .ok_or_else(lock_error)?
+                .save_case(&path)
+                .map_err(|error| error.to_string())?
+        } else {
+            let opened = Engine::open_case(&path).map_err(|error| error.to_string())?;
+            let summary = opened.case_summary().map_err(|error| error.to_string())?;
+            *locked = Some(opened);
+            summary
+        };
+        *selected.lock().map_err(|_| lock_error())? = None;
+        Ok(Some(summary))
+    })
+    .await
+    .map_err(|_| lock_error())?
+}
+
+#[tauri::command]
+async fn close_case(state: State<'_, AppState>) -> Result<CaseSummary, String> {
+    state
+        .busy
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .map_err(|_| "Wait for the current operation to finish.".to_string())?;
+    let guard = BusyGuard(Arc::clone(&state.busy));
+    let engine = Arc::clone(&state.engine);
+    let selected = Arc::clone(&state.selected);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        let new = Engine::new().map_err(|error| error.to_string())?;
+        let summary = new.case_summary().map_err(|error| error.to_string())?;
+        *engine.lock().map_err(|_| lock_error())? = Some(new);
+        *selected.lock().map_err(|_| lock_error())? = None;
+        Ok(summary)
+    })
+    .await
+    .map_err(|_| lock_error())?
+}
+
 pub fn run() {
     let engine = match Engine::new() {
         Ok(engine) => engine,
@@ -207,7 +323,11 @@ pub fn run() {
             import_demo,
             cancel_import,
             query_events,
-            event_detail
+            event_detail,
+            case_summary,
+            save_case,
+            open_case,
+            close_case
         ])
         .build(tauri::generate_context!())
         .expect("Unable to start the desktop application")

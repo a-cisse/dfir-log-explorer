@@ -1,0 +1,6 @@
+{"timestamp":"2026-10-13T08:00:00Z","remote_addr":"192.0.2.3","method":"POST","path":"/login","status":401,"user":"alice","context":{"synthetic":true}}
+{"time_iso8601":"2026-10-13T10:00:01+02:00","remote_addr":"192.0.2.4","request":"GET /health HTTP/1.1","status":"200","body_bytes_sent":"42","user":"al\u0069ce"}
+{"timestamp":"2026-10-13T08:00:02","source_ip":"192.0.2.5","status":999,"user":"bob"}
+{"timestamp_ms":1791878403000,"user":"carol","enabled":true}
+{"message":"No timestamp","user":"bob"}
+not valid JSON

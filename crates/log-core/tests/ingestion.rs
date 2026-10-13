@@ -493,7 +493,7 @@ fn successful_import_invalidates_aggregate_cache_and_rollback_preserves_it() {
         )
         .unwrap();
     let stats = engine.query(&query("")).unwrap().statistics;
-    assert_eq!((stats.total, stats.parsed, stats.unparsed), (2, 0, 2));
+    assert_eq!((stats.total, stats.parsed, stats.unparsed), (3, 1, 2));
 }
 
 #[test]

@@ -1,4 +1,4 @@
-name: MVP 0 checks and desktop builds
+name: MVP 1 checks and desktop builds
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mvp-0-${{ github.ref }}
+  group: mvp-1-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

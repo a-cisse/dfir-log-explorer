@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -17,6 +17,7 @@ import {
 import { Sidebar, Topbar, PageHeading } from "./WorkspaceChrome";
 import { EvidenceView, ParsersView, SettingsView } from "./WorkspaceViews";
 import { LogSourceHeader } from "./LogSourceHeader";
+import { CaseBar, SourceFilters } from "./CaseBar";
 import { HelpDialog } from "./HelpDialog";
 import type { View } from "./workspace";
 import { DetailPanel } from "./DetailPanel";
@@ -28,6 +29,8 @@ import { formatBytes, formatNumber } from "./format";
 import { usePreference, useTheme, type Theme } from "./preferences";
 import type {
   Bridge,
+  CaseSummary,
+  JsonFilter,
   EventDetail,
   EventRow,
   FieldFilter,
@@ -60,7 +63,53 @@ const emptyPage: QueryPage = {
   },
 };
 export function App({ bridge }: { bridge: Bridge }) {
-  const [source, setSource] = useState<SourceSummary | null>(null);
+  const [caseInfo, setCaseInfo] = useState<CaseSummary>({
+    name: "Temporary case",
+    path: null,
+    sources: [],
+  });
+  const [sourceId, setSourceId] = useState<number | null>(null);
+  const [readerFilter, setReaderFilter] = useState<ParserMode | null>(null);
+  const [hasTimestamp, setHasTimestamp] = useState<boolean | null>(null);
+  const [jsonFilter, setJsonFilter] = useState<JsonFilter | null>(null);
+  const source = useMemo<SourceSummary | null>(
+    () =>
+      sourceId !== null
+        ? (caseInfo.sources.find((s) => s.id === sourceId) ?? null)
+        : caseInfo.sources.length === 1
+          ? caseInfo.sources[0]
+          : caseInfo.sources.length === 0
+            ? null
+            : {
+                ...caseInfo.sources[0],
+                id: 0,
+                name: `${caseInfo.name} · ${caseInfo.sources.length} sources`,
+                provenance: caseInfo.path ?? "Temporary local case",
+                parserMode: "auto",
+                sha256: "",
+                ...Object.fromEntries(
+                  [
+                    "totalBytes",
+                    "totalEvents",
+                    "parsedEvents",
+                    "partialEvents",
+                    "unparsedEvents",
+                    "textEvents",
+                    "warningEvents",
+                    "elapsedMs",
+                  ].map((key) => [
+                    key,
+                    caseInfo.sources.reduce(
+                      (sum, item) =>
+                        sum + Number(item[key as keyof SourceSummary]),
+                      0,
+                    ),
+                  ]),
+                ),
+              },
+    [caseInfo, sourceId],
+  );
+
   const [page, setPage] = useState<QueryPage>(emptyPage);
   const [mode, setMode] = useState<ParserMode>("auto");
   const [view, setView] = useState<View>("Explore");
@@ -105,6 +154,10 @@ export function App({ bridge }: { bridge: Bridge }) {
     setDetailLoading(false);
   }, []);
   const resetFilters = useCallback(() => {
+    setSourceId(null);
+    setReaderFilter(null);
+    setHasTimestamp(null);
+    setJsonFilter(null);
     setSearch("");
     setDebouncedSearch("");
     setOnlyWarnings(false);
@@ -125,6 +178,10 @@ export function App({ bridge }: { bridge: Bridge }) {
     closeDetails();
   }, [
     source,
+    sourceId,
+    readerFilter,
+    hasTimestamp,
+    jsonFilter,
     debouncedSearch,
     scope,
     onlyWarnings,
@@ -137,11 +194,15 @@ export function App({ bridge }: { bridge: Bridge }) {
     closeDetails,
   ]);
   useEffect(() => {
-    if (!source || busy) return;
+    if (!source || busy || picking) return;
     let current = true;
     setLoading(true);
     bridge
       .query({
+        sourceId,
+        parser: readerFilter,
+        hasTimestamp,
+        jsonFilter,
         search: debouncedSearch,
         searchField: scope,
         onlyWarnings,
@@ -175,6 +236,10 @@ export function App({ bridge }: { bridge: Bridge }) {
   }, [
     bridge,
     source,
+    sourceId,
+    readerFilter,
+    hasTimestamp,
+    jsonFilter,
     debouncedSearch,
     scope,
     onlyWarnings,
@@ -185,6 +250,7 @@ export function App({ bridge }: { bridge: Bridge }) {
     descending,
     offset,
     busy,
+    picking,
   ]);
   const beginImport = useCallback(
     async (demo = false) => {
@@ -209,7 +275,7 @@ export function App({ bridge }: { bridge: Bridge }) {
         const summary = await (demo
           ? bridge.importDemo(setProgress)
           : bridge.importFile(mode, setProgress));
-        setSource(summary);
+        setCaseInfo(await bridge.caseSummary());
         setView("Explore");
         resetFilters();
         setSortBy("lineNumber");
@@ -234,6 +300,64 @@ export function App({ bridge }: { bridge: Bridge }) {
     },
     [bridge, mode, closeDetails, resetFilters],
   );
+  useEffect(() => {
+    let current = true;
+    bridge
+      .caseSummary()
+      .then((info) => {
+        if (current) setCaseInfo(info);
+      })
+      .catch((reason) => {
+        if (current) setError(String(reason));
+      });
+    return () => {
+      current = false;
+    };
+  }, [bridge]);
+  async function changeCase(action: "save" | "open" | "new") {
+    if (importRunning.current) return;
+    if (
+      bridge.isDesktop &&
+      action !== "save" &&
+      !caseInfo.path &&
+      caseInfo.sources.length > 0
+    ) {
+      setError(
+        "Save this temporary case before switching so your imported evidence is retained.",
+      );
+      return;
+    }
+    importRunning.current = true;
+    setPicking(true);
+    setError(null);
+    try {
+      const info = await (action === "save"
+        ? bridge.saveCase()
+        : action === "open"
+          ? bridge.openCase()
+          : bridge.closeCase());
+      if (info) {
+        closeDetails();
+        setCaseInfo(info);
+        resetFilters();
+        setPage(emptyPage);
+        setPageAvailable(false);
+        setSortBy("lineNumber");
+        setDescending(false);
+        setView("Explore");
+        setNotice(
+          action === "save"
+            ? "Case saved locally. Future imports are saved automatically."
+            : "Case ready.",
+        );
+      }
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      importRunning.current = false;
+      setPicking(false);
+    }
+  }
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -318,6 +442,10 @@ export function App({ bridge }: { bridge: Bridge }) {
     setOffset(0);
   }
   const filtered =
+    sourceId !== null ||
+    readerFilter !== null ||
+    hasTimestamp !== null ||
+    jsonFilter !== null ||
     debouncedSearch.length > 0 ||
     onlyWarnings ||
     parseStatus !== null ||
@@ -364,8 +492,9 @@ export function App({ bridge }: { bridge: Bridge }) {
       />
       <main className="main-content">
         <Topbar
+          caseName={caseInfo.name}
           source={source}
-          busy={busy}
+          busy={disabled}
           search={search}
           setSearch={setSearch}
           searchInput={searchInput}
@@ -388,6 +517,13 @@ export function App({ bridge }: { bridge: Bridge }) {
           disabled={disabled}
           picking={picking}
           beginImport={beginImport}
+        />
+        <CaseBar
+          info={caseInfo}
+          disabled={disabled}
+          onSave={() => void changeCase("save")}
+          onOpen={() => void changeCase("open")}
+          onNew={() => void changeCase("new")}
         />
         {error && (
           <div role="alert" className="message error-message">
@@ -460,6 +596,30 @@ export function App({ bridge }: { bridge: Bridge }) {
                   onRange={(from, to) => rangeFilter([from, to])}
                 />
                 <section className="explorer-card">
+                  <SourceFilters
+                    info={caseInfo}
+                    sourceId={sourceId}
+                    onSource={(id) => {
+                      setSourceId(id);
+                      setOffset(0);
+                    }}
+                    parser={readerFilter}
+                    onParser={(value) => {
+                      setReaderFilter(value);
+                      setOffset(0);
+                    }}
+                    hasTimestamp={hasTimestamp}
+                    onTimestamp={(value) => {
+                      setHasTimestamp(value);
+                      setOffset(0);
+                    }}
+                    jsonFilter={jsonFilter}
+                    onJson={(value) => {
+                      setJsonFilter(value);
+                      setOffset(0);
+                    }}
+                    disabled={disabled}
+                  />
                   <LogFilterBar
                     status={parseStatus}
                     onStatus={statusFilter}
@@ -484,6 +644,7 @@ export function App({ bridge }: { bridge: Bridge }) {
                     onError={setError}
                   />
                   <EventTable
+                    sources={caseInfo.sources}
                     rows={page.rows}
                     selectedId={detail?.id ?? null}
                     onSelect={(row) => void selectEvent(row)}
@@ -538,7 +699,14 @@ export function App({ bridge }: { bridge: Bridge }) {
               {detail && (
                 <DetailPanel
                   detail={detail}
-                  source={source}
+                  source={
+                    caseInfo.sources.find((s) => s.id === detail.sourceId) ??
+                    source
+                  }
+                  onJsonFilter={(filter) => {
+                    setJsonFilter(filter);
+                    setOffset(0);
+                  }}
                   onClose={closeDetails}
                   onFilter={exactFilter}
                   onParsingFilter={statusFilter}
@@ -586,8 +754,8 @@ export function App({ bridge }: { bridge: Bridge }) {
                   <ArrowRight size={14} />
                 </button>
                 <div className="supported-formats">
-                  Apache Common & Combined <span>·</span> Plain text{" "}
-                  <span>·</span> UTF-8
+                  Apache / Nginx <span>·</span> JSON Lines <span>·</span> Plain
+                  text <span>·</span> UTF-8
                 </div>
                 <div className="empty-workflow">
                   <span>
@@ -604,7 +772,10 @@ export function App({ bridge }: { bridge: Bridge }) {
             )
           ))}
         {view === "Evidence" && (
-          <EvidenceView source={source} onExplore={() => navigate("Explore")} />
+          <EvidenceView
+            sources={caseInfo.sources}
+            onExplore={() => navigate("Explore")}
+          />
         )}
         {view === "Parsers" && (
           <ParsersView
@@ -627,7 +798,8 @@ export function App({ bridge }: { bridge: Bridge }) {
         <footer className="workspace-footer">
           <span>
             <span className="live-dot" />
-            Temporary session <span className="footer-separator">/</span>
+            {caseInfo.path ? "Saved case" : "Temporary case"}{" "}
+            <span className="footer-separator">/</span>
             <LockKeyhole size={11} />
             Local processing
           </span>
@@ -644,7 +816,7 @@ export function App({ bridge }: { bridge: Bridge }) {
             </span>
           ) : (
             <span>
-              DFIR Log Explorer <span className="footer-version">v0.1.0</span>
+              DFIR Log Explorer <span className="footer-version">v0.2.0</span>
             </span>
           )}
         </footer>

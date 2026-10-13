@@ -1,4 +1,4 @@
-use crate::{EngineError, ParseStatus};
+use crate::{EngineError, ParseStatus, ParserMode};
 use duckdb::{params_from_iter, types::Value, Connection};
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +33,7 @@ impl SearchField {
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SortField {
+    SourceId,
     #[default]
     LineNumber,
     Timestamp,
@@ -49,6 +50,7 @@ pub enum SortField {
 impl SortField {
     pub fn sql(self) -> &'static str {
         match self {
+            Self::SourceId => "source_id",
             Self::LineNumber => "id",
             Self::Timestamp => "timestamp_ms",
             Self::SourceIp => "source_ip",
@@ -71,9 +73,20 @@ pub struct FieldFilter {
     pub value: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonFilter {
+    pub key: String,
+    pub value: String,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Query {
+    pub source_id: Option<u64>,
+    pub parser: Option<ParserMode>,
+    pub has_timestamp: Option<bool>,
+    pub json_filter: Option<JsonFilter>,
     pub search: String,
     pub only_warnings: bool,
     pub offset: u64,
@@ -88,7 +101,21 @@ pub struct Query {
 }
 impl Query {
     pub fn predicate(&self) -> Result<(String, Vec<Value>), EngineError> {
-        if self.limit == 0
+        self.predicate_with_json(true)
+    }
+
+    pub(crate) fn predicate_with_json(
+        &self,
+        include_json: bool,
+    ) -> Result<(String, Vec<Value>), EngineError> {
+        if self
+            .source_id
+            .is_some_and(|id| id == 0 || id > i64::MAX as u64)
+            || self.parser == Some(ParserMode::Auto)
+            || self.json_filter.as_ref().is_some_and(|f| {
+                f.key.is_empty() || f.key.chars().count() > 4096 || f.value.chars().count() > 4096
+            })
+            || self.limit == 0
             || self.limit > crate::PAGE_SIZE
             || self.offset > i64::MAX as u64
             || self.search.chars().count() > 4096
@@ -109,14 +136,13 @@ impl Query {
         let mut clauses = vec!["true".to_string()];
         let mut values = Vec::new();
         if !self.search.is_empty() {
-            // Extracted strings are exact substrings of the original record,
-            // except the normalized ISO timestamp. Avoid concatenating every
-            // field into a second large string for each event during a scan.
             if self.search_field == SearchField::All {
-                clauses.push(
-                    "(contains(lower(message), lower(?)) OR contains(lower(timestamp), lower(?)))"
-                        .into(),
-                );
+                if include_json {
+                    clauses.push("(contains(lower(message), lower(?)) OR contains(lower(timestamp), lower(?)) OR EXISTS (SELECT 1 FROM event_attributes a WHERE a.event_id = events.id AND contains(lower(a.value), lower(?))))".into());
+                    values.push(Value::Text(self.search.clone()));
+                } else {
+                    clauses.push("(contains(lower(message), lower(?)) OR contains(lower(timestamp), lower(?)))".into());
+                }
                 values.push(Value::Text(self.search.clone()));
             } else {
                 clauses.push(format!(
@@ -125,6 +151,36 @@ impl Query {
                 ));
             }
             values.push(Value::Text(self.search.clone()));
+        }
+        if let Some(id) = self.source_id {
+            clauses.push("source_id = ?".into());
+            values.push(Value::BigInt(id as i64));
+        }
+        if let Some(parser) = self.parser {
+            let name = match parser {
+                ParserMode::Apache => "apache",
+                ParserMode::Nginx => "nginx",
+                ParserMode::JsonLines => "json_lines",
+                ParserMode::Text => "text",
+                ParserMode::Auto => unreachable!(),
+            };
+            clauses.push("parser = ?".into());
+            values.push(Value::Text(name.into()));
+        }
+        if let Some(present) = self.has_timestamp {
+            clauses.push(
+                if present {
+                    "timestamp_ms IS NOT NULL"
+                } else {
+                    "timestamp_ms IS NULL"
+                }
+                .into(),
+            );
+        }
+        if let Some(filter) = &self.json_filter {
+            clauses.push("EXISTS (SELECT 1 FROM event_attributes a WHERE a.event_id = events.id AND a.key = ? AND a.value = ?)".into());
+            values.push(Value::Text(filter.key.clone()));
+            values.push(Value::Text(filter.value.clone()));
         }
         if self.only_warnings {
             clauses.push("parse_error IS NOT NULL".into());
@@ -148,7 +204,11 @@ impl Query {
         Ok((clauses.join(" AND "), values))
     }
     pub fn is_original_order(&self) -> bool {
-        self.search.is_empty()
+        self.source_id.is_none()
+            && self.parser.is_none()
+            && self.has_timestamp.is_none()
+            && self.json_filter.is_none()
+            && self.search.is_empty()
             && !self.only_warnings
             && self.parse_status.is_none()
             && self.field_filter.is_none()
@@ -193,7 +253,7 @@ pub(crate) fn statistics(
         "SELECT count(*), count(*) FILTER (WHERE parse_status = 'parsed'),
          count(*) FILTER (WHERE parse_status = 'partial'), count(*) FILTER (WHERE parse_status = 'unparsed'),
          count(parse_error), count(*) FILTER (WHERE timestamp_ms IS NULL),
-         count(*) FILTER (WHERE parser = 'apache' AND method IS NOT NULL), count(DISTINCT source_ip),
+         count(*) FILTER (WHERE method IS NOT NULL), count(DISTINCT source_ip),
          count(*) FILTER (WHERE status BETWEEN 200 AND 299), count(*) FILTER (WHERE status BETWEEN 300 AND 399),
          count(*) FILTER (WHERE status BETWEEN 400 AND 499), count(*) FILTER (WHERE status BETWEEN 500 AND 599),
          min(timestamp_ms), max(timestamp_ms) FROM events WHERE {predicate}"
