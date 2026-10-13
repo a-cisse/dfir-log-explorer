@@ -1,36 +1,120 @@
 # DFIR Log Explorer
 
-A private desktop workspace for exploring logs on Windows and Linux. Source files and analysis stay on your machine. The application has no telemetry, cloud backend, remote resources, or automatic application updates.
+**Spend less time preparing logs. Spend more time investigating.**
 
-**MVP 0** provides a real Rust/DuckDB engine and a desktop interface. It is an initial, bounded feature set; professional-tool performance has not yet been demonstrated in comparative benchmarks.
+A focused log exploration tool for digital forensic and incident response workflows. DFIR Log Explorer helps analysts turn collected log files into structured, searchable events, with the original log content and parsing diagnostics available alongside the results.
 
-## What you can do
+**Project status:** `main` contains the accepted **MVP 0 (v0.1.0)**. **MVP 1 (v0.2.0)** is implemented and tested in [PR #3](https://github.com/a-cisse/dfir-log-explorer/pull/3), awaiting integration and human acceptance. Its additional capabilities are identified below as **MVP 1 review build**. These are early test builds, not a production release.
 
-- Import one uncompressed text log into a temporary analysis session.
-- Recognize Apache Common and Combined events automatically, or explicitly choose Apache or plain text.
-- Search raw logs and extracted fields with a case-insensitive literal substring; combine parsing, warning, exact-field and explicit UTC time filters.
-- Browse original source order or sort across the complete dataset, in virtualized pages of at most 500 events. Configure the visible columns.
-- Inspect extracted HTTP fields, source line numbers, byte offsets, and raw events.
-- Distinguish Parsed, Partial and Unparsed events without losing any source lines or recoverable fields. Count warnings independently.
-- Review real parsing/HTTP statistics and a compact interactive timeline. Events without valid timestamps remain outside the timeline.
-- Monitor and cancel imports. Cancelled or failed imports preserve the previous dataset.
-- Inspect the imported source's SHA-256 fingerprint.
-- Use Light (default), Dark or System themes, persistent display preferences, compact navigation and keyboard shortcuts.
+## Overview
 
-## Download and test
+Investigations often start with raw logs collected from compromised or potentially compromised systems. Before an analyst can follow an IP address, examine a request or compare timestamps, those files need to become understandable datasets.
 
-The [MVP 0 checks and desktop builds](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-0.yml) workflow produces downloadable artifacts after a successful run:
+DFIR Log Explorer brings preconfigured parsing, filtering, event inspection and visualization into a local desktop workspace for Windows and Linux. Its purpose is to reduce repetitive preparation work so analysts can spend more time examining what happened. It uses Rust and an embedded DuckDB engine behind a Tauri 2 interface built with React and TypeScript.
 
-- `dfir-log-explorer-linux`: Ubuntu 24.04 x64 `.deb` and application executable.
-- `dfir-log-explorer-windows`: Windows x64 NSIS setup executable.
+The application focuses on examining collected files. It fits alongside scripts, centralized log platforms and specialized forensic tools; its scope is interactive log exploration rather than continuous ingestion, monitoring or security alerting.
 
-These are test builds from the task branch, not a production release. Windows packages are initially unsigned. Download the artifact for your system from the workflow run's summary, extract it, and follow [the acceptance guide](docs/mvp-0-acceptance.md). See [build verification](docs/ci/README.md) for the workflow and artifact details. Artifact availability depends on successful platform builds.
+## The problem
 
-For an Ubuntu package, review and install the `.deb` with your normal package manager. For Windows, run the setup executable. The Windows installer embeds the offline WebView2 installer; an Internet connection is not required to install that runtime. A fixed WebView2 runtime is a future distribution improvement, and the installed shared runtime can be maintained separately by Windows.
+Preparing logs can involve reviewing raw text, combining `grep`, `awk` or `jq` commands, writing Python scripts, building parsing expressions, converting results to CSV and moving them into spreadsheets or visualization tools. Different formats and timestamp conventions add work, and transformations can make parsing failures or the original event harder to inspect.
 
-## Build locally
+These approaches remain useful for their own workflows. DFIR Log Explorer offers a consistent interface for the supported formats, bringing field extraction and exploratory analysis together without requiring a separately managed log platform.
 
-Install Rust 1.99.0 (selected by `rust-toolchain.toml`) and Node.js 24 LTS. The exact dependency resolutions are committed in `Cargo.lock` and `package-lock.json`.
+## The solution
+
+**Import → Parse → Explore → Investigate**
+
+1. **Import:** Select a collected log file through the desktop file picker. The source is opened read-only, with progress and cancellation available.
+2. **Parse:** Use a preconfigured reader or automatic recognition. Review extraction results, parsing status and warnings.
+3. **Explore:** Search raw content and fields, combine filters, sort results and inspect event distributions.
+4. **Investigate:** Follow relevant events while checking their raw content, source positions and diagnostics. The analyst remains responsible for interpreting the evidence.
+
+## Why DFIR Log Explorer?
+
+- **Less repetitive preparation:** Built-in readers extract supported fields without requiring a new script or parsing expression for each supported dataset. Reducing time to investigation is a product objective, not a measured claim of superiority.
+- **Integrated exploration:** Move between the event table, timeline, filters and inspector within the same workspace.
+- **Visible parsing quality:** Separate successful interpretation, partial extraction and unrecognized records. Malformed lines can still be examined instead of disappearing from the results.
+- **Original content within reach:** Inspect raw text, source line numbers and byte offsets alongside extracted fields. Source hashes support comparison with the imported file.
+- **Local setup:** Log analysis uses an embedded database and packaged UI assets. It does not require an Elasticsearch, Kibana, Splunk or other externally managed log backend.
+
+The tool is intended to complement existing workflows, including Graylog, Timesketch, Timeline Explorer and specialized forensic parsers. No comparative benchmark establishes that it is faster or more capable than those tools. See the [performance notes](docs/performance.md) and [validation record](docs/validation.md) for measured workloads and their limits.
+
+## Features
+
+### Available in MVP 0 on `main`
+
+- Import one uncompressed text source into a temporary analysis session, with automatic Apache recognition or explicit Apache/plain-text selection.
+- Search raw logs and extracted fields using case-insensitive literal substrings. Combine parsing status, warnings, exact-field and explicit UTC time filters.
+- Sort across the complete filtered dataset and browse virtualized pages of at most 500 events. Configure visible columns.
+- Inspect complete extracted HTTP fields, raw events, source line numbers, byte offsets and parsing diagnostics.
+- Review parsing counts, HTTP response statistics and a compact interactive timeline for all matching events, rather than just the visible page.
+- Track import progress and cancel an import. Cancellation or failure rolls back the import and preserves the previous dataset.
+- Inspect the source's SHA-256 fingerprint; use Light, Dark or System themes, persistent display preferences, compact navigation and keyboard shortcuts.
+
+### Implemented in the MVP 1 review build
+
+- Save temporary analysis as a local `.dfir` case and reopen it without access to the original source files. Further imports into a saved case are retained automatically.
+- Append multiple sources to a case, with stable source identities, source summaries and the correct provenance in the event inspector. Duplicate imports remain distinct sources.
+- Select explicit Nginx access and JSON Lines readers, retaining original JSON fields and independent validation diagnostics.
+- Combine source, identified-reader, timestamp-presence and exact JSON scalar filters with the existing filters. Compare timestamps across sources using UTC instants while retaining source offsets.
+
+The [MVP 1 acceptance guide][mvp1-acceptance], [reader/date rules][mvp1-formats] and [validation record][mvp1-validation] describe that implementation and its checks. A custom parser editor is not currently available; the application uses preconfigured readers.
+
+### Understanding parsing results
+
+| Status                         | Meaning                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| **Parsed**                     | The reader accepted the record without field-validation errors.                                         |
+| **Partial — partially parsed** | Some fields were recovered, but others failed validation. Recoverable fields remain available.          |
+| **Unparsed**                   | The record could not be interpreted as a supported structured event. Its raw content remains available. |
+
+Warnings are counted independently of parsing status. For example, a text record can be Parsed while carrying an encoding warning. Explicit plain-text mode marks successfully read lines Parsed without claiming structured extraction. Missing optional fields do not automatically mean parsing failed, and a Parsed status is not a guarantee of evidential reliability.
+
+## Supported log formats
+
+| Reader        | Availability       | Supported scope                                                                                                                              |
+| ------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apache access | MVP 0 and MVP 1    | Standard Common and Combined layouts; not every configurable Apache `LogFormat`.                                                             |
+| Plain text    | MVP 0 and MVP 1    | Uncompressed text, one retained record per source line, without structured extraction.                                                       |
+| Nginx access  | MVP 1 review build | Standard Common/Combined access layouts; custom layouts and Nginx error logs are not supported.                                              |
+| JSON Lines    | MVP 1 review build | One JSON object per line. Known HTTP/date aliases are normalized; original fields, including nested values, remain available for inspection. |
+
+Auto mode recognizes Apache-compatible access layouts; MVP 1 also recognizes JSON objects. Apache and Nginx Combined layouts overlap, so automatic recognition cannot establish which server produced a record. Choose Nginx explicitly in MVP 1 to label those events Nginx.
+
+In the JSON Lines reader, malformed JSON, non-object values and blank lines remain Unparsed with diagnostics. Exact JSON filters cover top-level strings, numbers and booleans. See the [reader/date rules][mvp1-formats] for aliases, duplicate-key handling and timestamp validation.
+
+Apache error logs, firewall/WAF/Syslog/HAProxy readers, binary logs and multiline grouping are not currently implemented. Future format support is listed in the [roadmap](#roadmap).
+
+## Screenshots
+
+These existing captures show the MVP 0 interface on `main`, using synthetic data. The MVP 1 review build adds case management and source controls.
+
+Event exploration with filters and a compact timeline:
+
+![MVP 0 event table, parsing summary and timeline with synthetic Apache logs](docs/images/ui-ux-light.png)
+
+Inspecting a partially parsed event while retaining its raw content:
+
+![MVP 0 inspector showing an invalid timestamp diagnostic and the original log line](docs/images/ui-ux-inspector.png)
+
+## Getting started
+
+### Download a desktop test build
+
+Initial supported platforms are **Ubuntu 24.04 x64** and **Windows 11 x64**. Successful CI runs provide:
+
+- `dfir-log-explorer-linux`: a `.deb` package and application executable.
+- `dfir-log-explorer-windows`: an NSIS setup executable.
+
+Use the [MVP 0 workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-0.yml) for the integrated version, or the [MVP 1 review workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-1.yml) for the additional case/readers functionality. Check the branch and commit shown by the run, download your platform's artifact and extract it. Artifacts depend on successful platform builds and are retained for 14 days; build locally if a suitable artifact is unavailable.
+
+On Ubuntu, install the `.deb` using your normal package manager. On Windows, run the setup executable. Windows test packages are unsigned. Follow the [MVP 0 acceptance guide](docs/mvp-0-acceptance.md) or [MVP 1 acceptance guide][mvp1-acceptance] for the version you downloaded. See [build verification](docs/ci/README.md) for the integrated workflow.
+
+Packaged applications do not require Rust or Node.js runtimes. They use the operating system's webview: WebKitGTK on Linux and WebView2 on Windows. The Windows package embeds the offline WebView2 installer, so installing that runtime does not require an Internet connection. The shared runtime can subsequently be maintained by Windows; bundling a fixed runtime is a future distribution improvement.
+
+### Build locally
+
+Install **Rust 1.99.0**, selected by [rust-toolchain.toml](rust-toolchain.toml), and **Node.js 24 LTS**. Exact dependency resolutions are committed in [Cargo.lock](Cargo.lock) and [package-lock.json](package-lock.json).
 
 On Ubuntu 24.04, install the desktop build prerequisites:
 
@@ -38,73 +122,138 @@ On Ubuntu 24.04, install the desktop build prerequisites:
 sudo apt-get install --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev librsvg2-dev patchelf
 ```
 
-On Windows, install the Microsoft C++ Build Tools with the **Desktop development with C++** workload and the Windows SDK. Install WebView2 if it is unavailable. See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+On Windows, install Microsoft C++ Build Tools with the **Desktop development with C++** workload and the Windows SDK. Install WebView2 if unavailable. See the official [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for platform setup.
+
+```sh
+git clone https://github.com/a-cisse/dfir-log-explorer.git
+cd dfir-log-explorer
+```
+
+A fresh clone checks out `main` (MVP 0). To reproduce the verified MVP 1 review implementation, switch to its revision before installing dependencies:
+
+```sh
+git switch --detach e886a5f6efe50de4e68f5f02b1237ab01fbc46d4
+```
+
+Then install dependencies and launch the desktop application:
 
 ```sh
 npm ci
 npm run desktop:dev
 ```
 
-Build an installer:
+Build an installer for the checked-out version:
 
 ```sh
 npm run desktop:build
 ```
 
-Bundles appear under `target/release/bundle/`. No Rust or Node runtime is needed to run the packaged application.
+Bundles normally appear under `target/release/bundle/`. On Windows, use `npm run desktop:build -- --target x86_64-pc-windows-msvc` for consistent packaging; output then appears under `target/x86_64-pc-windows-msvc/release/bundle/`. This explicit target keeps static-runtime flags separate from procedural-macro host builds.
 
-## Interface preview
+### Preview the interface
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:1420`. Browser mode is clearly labeled and only explores the bundled synthetic sample. **Real file imports require the desktop application.** The preview does not implement a second production parser or upload logs.
+Open `http://127.0.0.1:1420` and choose **Explore a synthetic sample**. Browser mode explores only the bundled synthetic sample. **Real file imports require the desktop application.** The preview has no upload API and does not implement a second production parser.
 
-## Checks
+## Usage
+
+1. Select **Auto detect** or the appropriate preconfigured reader, then choose **Import log file** in the desktop app. For a first walkthrough, use the synthetic sample.
+2. Review Parsed, Partial, Unparsed and warning counts before relying on extracted fields.
+3. Search for an IP address, request path or timestamp. In the sample, `POST /LOGIN` matches two events regardless of case.
+4. Combine exact-field, parsing or warning filters with a UTC time range. Sort across all matching events or select a timeline interval to narrow the results.
+5. Select an event and switch between **Details**, **Raw Log** and **Parse Diagnostics**. Check the original line and byte offset against the source when necessary.
+6. In **MVP 1**, use **Save case as…** to retain the analysis, add further sources with **Import log file**, and select a source or all sources for exploration. Use **Open case…** to resume the saved investigation.
+
+Table/inspector timestamps retain source offsets; timeline intervals and time filters use UTC, with an inclusive start and exclusive end. Missing or invalid timestamps stay outside time ranges and the timeline. MVP 1 rejects ambiguous JSON dates and does not guess the units of numeric timestamps; see the [date rules][mvp1-formats].
+
+Shortcuts include **Ctrl/Cmd O** to import, **Ctrl/Cmd K** to focus search, arrow keys to navigate visible rows, **Enter** to inspect and **Esc** to close the inspector or help.
+
+## Technical limits and local data handling
+
+### Sessions and cases
+
+- **MVP 0:** One temporary source. A successful new import replaces the previous dataset; normal application exit removes session storage.
+- **MVP 1:** Imports append sources. **Save case as…** retains all imported evidence; saved cases retain later successful imports automatically. Saving does not overwrite existing files. Cases use schema version 1, with no automatic migration of unknown versions.
+- Unsaved MVP 1 cases remain temporary. A populated temporary case must be saved before switching cases through the UI. Saved cases have no source-removal function or saved-search persistence.
+- Saved cases contain raw evidence, extracted fields, source paths and hashes without application encryption. Close a case or the application before copying/backing it up because DuckDB can use an adjacent write-ahead log. Crashes or forced termination can leave temporary storage behind; secure erasure is not implemented.
+
+### Import and query boundaries
+
+- Sources are read-only. Accepted imports retain original bytes, including line terminators and invalid UTF-8, alongside decoded display text. Invalid UTF-8 uses replacement characters for display; original bytes remain stored.
+- Use stable source files. Size or modification-time changes detected during import cause rollback. Those checks and SHA-256 fingerprints do not constitute forensic acquisition or a complete chain-of-custody system.
+- Only uncompressed UTF-8 text is supported. Known gzip, ZIP, EVTX and UTF-16 signatures are rejected. Dedicated binary readers, additional encodings, compressed sources and multiline grouping are future work.
+- A line exceeding **1 MiB**, including its terminator, causes an explicit error and full rollback; it is not silently truncated.
+- DuckDB's **512 MB buffer-memory budget is not a process-wide RAM limit**. Original bytes and decoded text are both stored, so sufficient local disk space is required.
+- Searches scan text/fields and sorting runs in DuckDB. Unfiltered pages use event-ID boundaries; deep filtered offsets can become slower. Full-text indexing is future work.
+- List fields are bounded previews, including URLs and user agents. Selecting an event returns its complete extracted fields and raw text; MVP 1 returns full JSON objects only in event details.
+- One import runs at a time. Queries and event details are unavailable during import. Cancellation or failure preserves the previous dataset/sources.
+
+### Local operation
+
+Analysis runs locally without an account, API key or cloud backend. The application has no telemetry, remote UI resources, remote parser downloads or automatic application updater. DuckDB external access and automatic extension downloads are disabled. Dependency downloads during development/building are separate from application runtime.
+
+This does not establish a verified zero-egress environment: operating-system services, antivirus and the shared WebView2 runtime have their own behavior. Interactive Windows acceptance and a fresh native/offline traffic audit were not performed for MVP 1. Read the [privacy notes](docs/privacy.md) for MVP 0 and the [MVP 1 privacy notes][mvp1-privacy] for saved-case handling.
+
+## Roadmap
+
+The long-term direction is a local investigation workspace with more validated readers and richer exploration of collected evidence. New functionality is delivered incrementally, with documented checks and limitations. Human acceptance is required before starting the next MVP; there are no promised release dates.
+
+| Stage | Status and scope                                                                                                                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MVP 0 | Accepted and integrated: temporary single-source exploration, Apache/text readers, transparent parsing and raw inspection. The UI redesign also added basic structured/time filters, global sorting, statistics and a bounded interactive timeline. |
+| MVP 1 | Implemented in review: persistent cases, multiple sources, Nginx/JSON Lines readers, additional structured filters and date/time handling.                                                                                                          |
+| MVP 2 | Planned: selected firewall/WAF/Syslog/HAProxy formats and necessary multiline handling.                                                                                                                                                             |
+| MVP 3 | Planned: expanded timeline/statistics workflows and saved searches; basic timeline/statistics are already available.                                                                                                                                |
+| MVP 4 | Planned: custom local parsing profiles with previews and versioning.                                                                                                                                                                                |
+| MVP 5 | Planned: measured large-volume optimization, resumable ingestion, compression and exports.                                                                                                                                                          |
+| Later | Subject to agreement: binary readers, correlations, annotations and additional validated requirements.                                                                                                                                              |
+
+Performance work can occur within each MVP when required for its acceptance. See the [integrated roadmap](docs/roadmap.md) and the [MVP 1 delivery roadmap][mvp1-roadmap].
+
+## Contributing
+
+Report issues with the application build/commit, operating system, source format and a reproducible **synthetic** example. Reader changes should include fixtures and tests that verify extraction, timestamp handling, diagnostics and access to original content. Propose changes on a feature branch through a pull request targeting `main`.
+
+Keep private evidence out of issues, commits and build artifacts. The repository ignores agent instruction files, private configuration, credentials/environment overrides, private case/data/export directories and build output. Only synthetic examples under `tests/fixtures/` are intended for version control. `.gitignore` does not remove files already tracked or published in history; review every commit for sensitive content.
+
+### Development checks
+
+Run these commands from the repository root:
 
 ```sh
+npm run build
 cargo fmt --all --check
 cargo test -p dfir-log-core --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
-npm run build
 npm test
 npx playwright install chromium
 npm run test:e2e
 npm run format:check
 ```
 
-The core can be tested without desktop libraries. The workspace Clippy check requires the platform's Tauri prerequisites.
+The core can be tested without desktop libraries. Workspace Clippy requires the platform's Tauri prerequisites. For workspace tests, build the UI assets first with `npm run build`, then run `cargo test --workspace --locked`.
 
-On Windows, append `--target x86_64-pc-windows-msvc` to Cargo test and Clippy commands (before Clippy's `--` separator). This isolates static-runtime flags from procedural-macro host builds. Use `npm run desktop:build -- --target x86_64-pc-windows-msvc` for consistent packaging; bundles then appear under `target/x86_64-pc-windows-msvc/release/bundle/`.
+On Windows, append `--target x86_64-pc-windows-msvc` to Cargo test and Clippy commands, before Clippy's `--` separator. See [build verification](docs/ci/README.md) for the integrated CI checks and platform packaging.
 
-The preview fixture is generated by the same Rust engine used in the desktop app:
+The bundled preview fixture is generated by the same Rust engine used in the desktop app:
 
 ```sh
 cargo run -p dfir-log-core --example export_demo --locked > src/demo-data.json
 ```
 
-## Session and format limits
+Additional documentation: [architecture](docs/architecture.md), [UI/UX audit](docs/ui-ux-audit.md), [redesign delivery report](docs/ui-ux-redesign.md), [performance](docs/performance.md), and [MVP 1 architecture][mvp1-architecture].
 
-- MVP 0 sessions are temporary; closing the application normally removes their database.
-- A successful new import replaces the previous dataset. Persistent cases and multiple sources belong to MVP 1.
-- The source is opened read-only. Raw bytes, including line terminators and invalid UTF-8, are retained in the temporary database; display text uses replacement characters where needed.
-- Sources should be stable during import. Size and modification-time changes cause rollback. This check and the hash do not constitute a forensic acquisition or a complete chain-of-custody system.
-- Only uncompressed UTF-8 text is supported initially. Known gzip, ZIP, EVTX, and UTF-16 signatures are rejected. Dedicated binary readers, encodings, compressed sources, and multiline event grouping are future work.
-- Lines exceeding 1 MiB cause an explicit error and full rollback. They are never silently truncated.
-- Common/Combined means the standard Apache layouts, not every configurable Apache `LogFormat`.
-- DuckDB's 512 MB buffer-memory budget is **not** a process-wide RAM limit. Source bytes and decoded text are both stored, so sufficient local temporary disk space is required.
-- Search scans text and sorting operates in DuckDB; full-text indexing is a future step. Unfiltered pages use ID boundaries; deep filtered offsets can still become slower.
-- List fields are bounded previews, including extracted URLs and agents. Selecting an event returns its complete extracted fields and raw text.
-- Only one import runs at a time. Queries and details are unavailable during import.
+## License and acknowledgments
 
-See the [UI/UX audit](docs/ui-ux-audit.md) and [redesign delivery report](docs/ui-ux-redesign.md) for the interface changes and validation.
+Project code is licensed under the [MIT License](LICENSE). The locally bundled Inter font is distributed under the [SIL Open Font License](public/licenses/Inter-OFL.txt). Dependency licenses remain applicable to their respective components.
 
-See [architecture](docs/architecture.md), [privacy](docs/privacy.md), [performance](docs/performance.md), and [the MVP roadmap](docs/roadmap.md).
-
-The locally bundled Inter font is distributed under the [SIL Open Font License](public/licenses/Inter-OFL.txt). Dependency licenses remain applicable to their respective components.
-
-## Public repository boundaries
-
-Agent instruction files, credentials, environment overrides, private cases, real datasets, exports, and build output are ignored. Only synthetic examples under `tests/fixtures/` are intended for version control. `.gitignore` does not remove files already tracked or published in history; every commit must be reviewed for sensitive content.
+[mvp1-acceptance]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/mvp-1-acceptance.md
+[mvp1-formats]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/mvp-1-formats.md
+[mvp1-validation]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/mvp-1-validation.md
+[mvp1-privacy]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/privacy.md
+[mvp1-roadmap]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/roadmap.md
+[mvp1-architecture]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/architecture.md
