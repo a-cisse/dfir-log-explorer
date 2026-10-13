@@ -12,7 +12,9 @@ Function DfirUserInstallDirectory
   ${If} $0 == ""
   ${AndIf} $INSTDIR == "$LOCALAPPDATA\${DFIR_APPLICATION_NAME}"
     ClearErrors
-    ${GetOptions} $CMDLINE "/D=" $1
+    ; NSIS removes /D= from $CMDLINE; inspect the original Windows command line.
+    System::Call 'kernel32::GetCommandLineW() w.r0'
+    ${GetOptions} $0 "/D=" $1
     ${If} ${Errors}
       ; Update invocations must retain their existing installation directory.
       ClearErrors
