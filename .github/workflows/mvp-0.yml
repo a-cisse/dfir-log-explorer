@@ -1,0 +1,83 @@
+name: MVP 0 checks and desktop builds
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mvp-0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interface:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run format:check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux
+            bundles: deb
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2025
+            name: windows
+            bundles: nsis
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # Public Ubuntu/Windows runners provide four CPUs and 16 GB RAM.
+      CARGO_BUILD_JOBS: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: mvp-0-release-v1
+          shared-key: mvp-0-${{ matrix.target }}
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+      - run: npm ci
+      - run: cargo fmt --all --check
+      - run: npm run build
+      - run: cargo test --workspace --release --locked --target ${{ matrix.target }}
+      - run: cargo clippy --workspace --all-targets --release --locked --target ${{ matrix.target }} -- -D warnings
+      - run: npm run desktop:build -- --bundles ${{ matrix.bundles }} --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dfir-log-explorer-${{ matrix.name }}
+          path: |
+            target/${{ matrix.target }}/release/bundle/deb/*.deb
+            target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
+            target/${{ matrix.target }}/release/dfir-log-explorer
+          if-no-files-found: error
+          retention-days: 14

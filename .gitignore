@@ -1,0 +1,46 @@
+# Local instructions, agent configuration, and credentials
+AGENTS.md
+.agents/
+.codex/
+.aws/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies, generated assets, and build products
+node_modules/
+target/
+dist/
+coverage/
+playwright-report/
+test-results/
+__pycache__/
+*.pyc
+src-tauri/gen/
+*.tsbuildinfo
+
+# Icons for platforms outside the MVP 0 scope
+src-tauri/icons/*
+!src-tauri/icons/icon.png
+!src-tauri/icons/icon.ico
+!src-tauri/icons/32x32.png
+!src-tauri/icons/128x128.png
+!src-tauri/icons/128x128@2x.png
+
+# Private investigation data (synthetic tests/fixtures are tracked)
+/cases/
+/data/
+/exports/
+/tmp/
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
