@@ -21,8 +21,9 @@ Recorded on 2026-10-13. These results apply to the recorded environment and synt
 | `npm run test:e2e`                                                         | Passed: three Chromium workflows                                                                                        |
 | `npm run format:check`                                                     | Passed                                                                                                                  |
 | Native Linux smoke                                                         | Passed on the final local binary with syscall tracing: real Rust import/query/detail, warning filter, and native bridge |
-| Linux `.deb` packaging                                                     | Passed; the local acceptance package uses the debug profile                                                             |
-| Windows build/acceptance                                                   | Pending repository workflow and interactive Windows testing                                                             |
+| Linux `.deb` packaging                                                     | Passed locally in debug mode and in repository CI with the release profile                                              |
+| Normal Linux window closure                                                | Passed: native window-close event removed the newly created temporary session directory                                 |
+| Windows build/acceptance                                                   | Release build tracked in PR checks; interactive Windows testing not performed here                                      |
 
 Browser workflows cover literal case-insensitive search, preserved malformed events, cancellation, empty results, keyboard focus, theme switching, and untrusted HTML shown as text. No external requests were observed in those browser-preview paths.
 
