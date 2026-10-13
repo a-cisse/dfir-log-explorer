@@ -1,6 +1,6 @@
 # MVP 1 validation record
 
-Recorded on 2026-10-13 for version 0.2.0 on the same Ubuntu 24.04 x64 VPS used for MVP 0. Rust 1.99.0, Node.js 24.21.0, DuckDB Rust client 1.10506.0 and Tauri 2.12.3. Tests use synthetic evidence only.
+Recorded on 2026-10-13, with local checks refreshed for version 0.2.1 on the same Ubuntu 24.04 x64 VPS used for MVP 0. Rust 1.99.0, Node.js 24.21.0, DuckDB Rust client 1.10506.0 and Tauri 2.12.3. Tests use synthetic evidence only. The release benchmark below was measured on 0.2.0; the 0.2.1 presentation/packaging correction does not change the engine.
 
 ## Local checks
 
@@ -11,11 +11,13 @@ Recorded on 2026-10-13 for version 0.2.0 on the same Ubuntu 24.04 x64 VPS used f
 | Rust formatting                       | Passed                                                                                                                                                                                                     |
 | TypeScript and production asset build | Passed                                                                                                                                                                                                     |
 | Browser-preview unit tests            | Passed: three tests, including persistent-case/native boundaries and combined filters                                                                                                                      |
-| Chromium workflows                    | Passed: eight workflows, including case controls, provenance and timestamp-presence filters                                                                                                                |
-| Linux debug `.deb` packaging          | Passed: version 0.2.0 package, approximately 26.65 MiB                                                                                                                                                     |
+| Chromium workflows                    | Passed: ten workflows, including case controls, provenance, timestamp-presence filters, table viewport space and column preference migration                                                               |
+| Linux debug `.deb` packaging          | Passed: version 0.2.1 package, approximately 26.65 MiB; bundled icons match the new SVG-derived assets                                                                                                     |
 | Native Linux MVP 1 smoke              | Passed with real save/open dialogs and source selection: persisted synthetic sample plus Nginx/JSON Lines imports, close/reopen, complete metadata, cross-source UTC/JSON filters and inspector provenance |
 
 The native smoke uses `tests/native_cases.py`, a virtual X display, DBus and tauri-driver. It verifies the production Rust handlers and the real React/IPC import flow; no production file access is enabled for the webview. X11 keyboard input is test-only, used to operate native dialogs. Software compositing was enabled for the virtual display; application security settings were retained.
+
+The [minimal workspace report](minimal-workspace.md) records the 0.2.1 layout, icon, download archive changes, current screenshots and measured table space at three desktop sizes.
 
 The core tests cover refusal to overwrite, rejection of non-case/missing/unknown-version files, exact source-local positions and raw bytes after reopening, append/rollback metadata/cache/IDs, independent JSON field validation, duplicate top-level keys, invalid/ambiguous dates, timestamp units, decoded escaped-value searches and bounded page payloads. Saved cases have no application encryption or source-removal/migration implementation.
 

@@ -2,7 +2,7 @@
 
 A private desktop workspace for exploring logs on Windows and Linux. Source files and analysis stay on your machine. The application has no telemetry, cloud backend, remote resources, or automatic application updates.
 
-**MVP 1 (v0.2.0)** provides a real Rust/DuckDB engine and a desktop interface. It is an initial, bounded feature set; professional-tool performance has not yet been demonstrated in comparative benchmarks.
+**MVP 1 (v0.2.1)** provides a real Rust/DuckDB engine and a desktop interface. It is an initial, bounded feature set; professional-tool performance has not yet been demonstrated in comparative benchmarks.
 
 ## What you can do
 
@@ -12,7 +12,7 @@ A private desktop workspace for exploring logs on Windows and Linux. Source file
 - Browse original source order or sort across the complete dataset, in virtualized pages of at most 500 events. Configure the visible columns.
 - Inspect extracted HTTP fields, source line numbers, byte offsets, and raw events.
 - Distinguish Parsed, Partial and Unparsed events without losing any source lines or recoverable fields. Count warnings independently.
-- Review real parsing/HTTP statistics and a compact interactive timeline. Events without valid timestamps remain outside the timeline.
+- Read logs immediately after import in a compact table: line, timestamp, parsing status and raw content. Open **Filters** for additional controls and **Statistics** for parsing/HTTP counts and the interactive timeline. Events without valid timestamps remain outside the timeline.
 - Monitor and cancel imports. Cancelled or failed imports preserve the previous dataset.
 - Inspect the imported source's SHA-256 fingerprint.
 - Use Light (default), Dark or System themes, persistent display preferences, compact navigation and keyboard shortcuts.
@@ -24,7 +24,7 @@ The [MVP 1 checks and desktop builds](https://github.com/a-cisse/dfir-log-explor
 - `dfir-log-explorer-linux`: Ubuntu 24.04 x64 `.deb` and application executable.
 - `dfir-log-explorer-windows`: Windows x64 NSIS setup executable.
 
-These are test builds from the task branch, not a production release. Windows packages are initially unsigned. Download the artifact for your system from the workflow run's summary, extract it, and follow [the acceptance guide](docs/mvp-1-acceptance.md). See [build verification](docs/ci/README.md) for the workflow and artifact details. Artifact availability depends on successful platform builds.
+These are test builds from the task branch, not a production release. Windows packages are initially unsigned. Download the artifact for your system from the workflow run's summary and extract it: the installer and, on Linux, executable are directly at the ZIP root. Follow [the acceptance guide](docs/mvp-1-acceptance.md). See [build verification](docs/ci/README.md) for the workflow and artifact details. Artifact availability depends on successful platform builds.
 
 For an Ubuntu package, review and install the `.deb` with your normal package manager. For Windows, run the setup executable. The Windows installer embeds the offline WebView2 installer; an Internet connection is not required to install that runtime. A fixed WebView2 runtime is a future distribution improvement, and the installed shared runtime can be maintained separately by Windows.
 
@@ -65,10 +65,10 @@ Open `http://127.0.0.1:1420`. Browser mode is clearly labeled and only explores 
 ## Checks
 
 ```sh
+npm run build
 cargo fmt --all --check
 cargo test -p dfir-log-core --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
-npm run build
 npm test
 npx playwright install chromium
 npm run test:e2e
@@ -87,7 +87,7 @@ cargo run -p dfir-log-core --example export_demo --locked > src/demo-data.json
 
 ## Case and format limits
 
-- Unsaved cases are temporary; closing the application normally removes their database. **Save case as…** preserves all imported evidence. Saved cases retain subsequent imports automatically.
+- Unsaved cases are temporary; closing the application normally removes their database. Open the **Case** menu and choose **Save case as…** to preserve all imported evidence. Saved cases retain subsequent imports automatically. **Open case…** and **New case** are in that same menu.
 - Imports append a new source. Cancellation or failure preserves every previous source. Duplicate imports are kept as distinct sources.
 - Existing files are never overwritten when saving. Cases use schema version 1; unknown database versions are rejected without automatic migration.
 - Nginx means standard access Common/Combined layouts; custom layouts and Nginx error logs are not supported. Auto mode labels the shared access layout Apache because producer identity cannot be inferred.
@@ -102,7 +102,7 @@ cargo run -p dfir-log-core --example export_demo --locked > src/demo-data.json
 - List fields are bounded previews, including extracted URLs and agents. Selecting an event returns its complete extracted fields and raw text.
 - Only one import runs at a time. Queries and details are unavailable during import.
 
-See the [UI/UX audit](docs/ui-ux-audit.md) and [redesign delivery report](docs/ui-ux-redesign.md) for the interface changes and validation.
+See the [minimal workspace delivery report](docs/minimal-workspace.md) for the current interface and screenshots. The [UI/UX audit](docs/ui-ux-audit.md) and [redesign delivery report](docs/ui-ux-redesign.md) document the earlier MVP 0 interface.
 
 See [architecture](docs/architecture.md), [privacy](docs/privacy.md), [performance](docs/performance.md), and [the MVP roadmap](docs/roadmap.md).
 

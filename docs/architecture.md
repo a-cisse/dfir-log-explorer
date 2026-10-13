@@ -47,7 +47,7 @@ Pages default to event-ID order. Sorting is executed across the complete filtere
 
 Each query also returns exact aggregate statistics for all matches, not just the visible page. Up to 32 contiguous time buckets contain parsing counts and HTTP response distributions. Missing timestamps are counted separately. The chart explicitly uses UTC; inspector/table timestamps retain source offsets. Aggregate responses for up to four recent predicates are cached in memory independently of sort and pagination. Successful imports invalidate the cache; rollback preserves it.
 
-The frontend separates workspace chrome, source header, parsing summary/status badges, filters, timeline, virtualized event table, tabbed inspector and secondary views. Light/Dark/System, sidebar width and visible columns are the only localStorage preferences; evidence and searches are not persisted there.
+The frontend separates workspace chrome, source header, parsing summary/status badges, filters, timeline, virtualized event table, tabbed inspector and secondary views. Explore gives the available height to the table; case actions and advanced filters open on demand, while Statistics contains the existing aggregates and timeline. Default columns are line, timestamp, parsing status and raw preview; a source column is mandatory in multiple-source cases. Legacy default column preferences migrate to this compact layout, while customized layouts remain intact. Light/Dark/System, sidebar width and visible columns are the only localStorage preferences; evidence and searches are not persisted there.
 
 Source import and query response types are serialized with camelCase keys. The generated synthetic preview fixture exercises the same serialization as production.
 

@@ -14,7 +14,7 @@ import {
   Sun,
   X,
 } from "lucide-react";
-import { Sidebar, Topbar, PageHeading } from "./WorkspaceChrome";
+import { Sidebar, Topbar, PageHeading, ImportActions } from "./WorkspaceChrome";
 import { EvidenceView, ParsersView, SettingsView } from "./WorkspaceViews";
 import { LogSourceHeader } from "./LogSourceHeader";
 import { CaseBar, SourceFilters } from "./CaseBar";
@@ -141,7 +141,7 @@ export function App({ bridge }: { bridge: Bridge }) {
   const [theme, setTheme] = useTheme();
   const [collapsed, setCollapsed] = usePreference<boolean>(
     "sidebarCollapsed",
-    false,
+    true,
     (v): v is boolean => typeof v === "boolean",
   );
   const searchInput = useRef<HTMLInputElement>(null);
@@ -500,6 +500,24 @@ export function App({ bridge }: { bridge: Bridge }) {
           searchInput={searchInput}
           navigate={navigate}
           themeControl={themeControl}
+          caseControl={
+            <CaseBar
+              info={caseInfo}
+              disabled={disabled}
+              onSave={() => void changeCase("save")}
+              onOpen={() => void changeCase("open")}
+              onNew={() => void changeCase("new")}
+            />
+          }
+          importControls={
+            <ImportActions
+              mode={mode}
+              setMode={setMode}
+              disabled={disabled}
+              picking={picking}
+              beginImport={beginImport}
+            />
+          }
         />
         {!bridge.isDesktop && (
           <div className="preview-banner">
@@ -510,21 +528,7 @@ export function App({ bridge }: { bridge: Bridge }) {
             </span>
           </div>
         )}
-        <PageHeading
-          view={view}
-          mode={mode}
-          setMode={setMode}
-          disabled={disabled}
-          picking={picking}
-          beginImport={beginImport}
-        />
-        <CaseBar
-          info={caseInfo}
-          disabled={disabled}
-          onSave={() => void changeCase("save")}
-          onOpen={() => void changeCase("open")}
-          onNew={() => void changeCase("new")}
-        />
+        {view !== "Explore" && <PageHeading view={view} />}
         {error && (
           <div role="alert" className="message error-message">
             <AlertTriangle size={16} />
@@ -574,53 +578,107 @@ export function App({ bridge }: { bridge: Bridge }) {
           (source ? (
             <div className="explorer-workspace">
               <div className="explorer-main">
-                <LogSourceHeader
-                  source={source}
-                  onEvidence={() => navigate("Evidence")}
-                />
-                <ParsingSummary
-                  source={source}
-                  disabled={busy}
-                  stats={page.statistics}
-                  available={pageAvailable && !loading && !busy}
-                  pending={loading || busy}
-                  filtered={filtered}
-                  active={parseStatus}
-                  onFilter={statusFilter}
-                />
-                <TimelineChart
-                  stats={page.statistics}
-                  available={pageAvailable && !loading && !busy}
-                  pending={loading || busy}
-                  disabled={busy || loading}
-                  onRange={(from, to) => rangeFilter([from, to])}
-                />
                 <section className="explorer-card">
-                  <SourceFilters
-                    info={caseInfo}
-                    sourceId={sourceId}
-                    onSource={(id) => {
-                      setSourceId(id);
-                      setOffset(0);
-                    }}
-                    parser={readerFilter}
-                    onParser={(value) => {
-                      setReaderFilter(value);
-                      setOffset(0);
-                    }}
-                    hasTimestamp={hasTimestamp}
-                    onTimestamp={(value) => {
-                      setHasTimestamp(value);
-                      setOffset(0);
-                    }}
-                    jsonFilter={jsonFilter}
-                    onJson={(value) => {
-                      setJsonFilter(value);
-                      setOffset(0);
-                    }}
-                    disabled={disabled}
-                  />
                   <LogFilterBar
+                    source={source}
+                    sourceSelector={
+                      <label className="source-selector">
+                        <span>Source</span>
+                        <select
+                          aria-label="Source filter"
+                          disabled={disabled}
+                          value={sourceId ?? ""}
+                          onChange={(e) => {
+                            setSourceId(
+                              e.target.value ? Number(e.target.value) : null,
+                            );
+                            setOffset(0);
+                          }}
+                        >
+                          <option value="">
+                            All sources ({caseInfo.sources.length})
+                          </option>
+                          {caseInfo.sources.map((item) => (
+                            <option value={item.id} key={item.id}>
+                              #{item.id} · {item.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    }
+                    advancedActive={
+                      readerFilter !== null ||
+                      hasTimestamp !== null ||
+                      jsonFilter !== null ||
+                      fieldFilter !== null ||
+                      scope !== "all" ||
+                      timeRange.some((value) => value !== null)
+                    }
+                    advanced={
+                      <SourceFilters
+                        parser={readerFilter}
+                        onParser={(value) => {
+                          setReaderFilter(value);
+                          setOffset(0);
+                        }}
+                        hasTimestamp={hasTimestamp}
+                        onTimestamp={(value) => {
+                          setHasTimestamp(value);
+                          setOffset(0);
+                        }}
+                        jsonFilter={jsonFilter}
+                        onJson={(value) => {
+                          setJsonFilter(value);
+                          setOffset(0);
+                        }}
+                        disabled={disabled}
+                      />
+                    }
+                    extraChips={
+                      (readerFilter !== null ||
+                        hasTimestamp !== null ||
+                        jsonFilter !== null) && (
+                        <div className="filter-chips">
+                          {readerFilter && (
+                            <button
+                              className="filter-chip"
+                              disabled={disabled}
+                              onClick={() => {
+                                setReaderFilter(null);
+                                setOffset(0);
+                              }}
+                            >
+                              Reader: {readerFilter.replaceAll("_", " ")} ×
+                            </button>
+                          )}
+                          {hasTimestamp !== null && (
+                            <button
+                              className="filter-chip"
+                              disabled={disabled}
+                              onClick={() => {
+                                setHasTimestamp(null);
+                                setOffset(0);
+                              }}
+                            >
+                              Timestamp:{" "}
+                              {hasTimestamp ? "valid" : "missing / invalid"} ×
+                            </button>
+                          )}
+                          {jsonFilter && (
+                            <button
+                              className="filter-chip"
+                              disabled={disabled}
+                              onClick={() => {
+                                setJsonFilter(null);
+                                setOffset(0);
+                              }}
+                            >
+                              {jsonFilter.key} = {jsonFilter.value} ×
+                            </button>
+                          )}
+                        </div>
+                      )
+                    }
                     status={parseStatus}
                     onStatus={statusFilter}
                     warnings={onlyWarnings}
@@ -771,6 +829,47 @@ export function App({ bridge }: { bridge: Bridge }) {
               </div>
             )
           ))}
+        {view === "Statistics" && (
+          <section className="secondary-view statistics-view">
+            {source ? (
+              <>
+                <button
+                  className="secondary-button"
+                  onClick={() => navigate("Explore")}
+                >
+                  <ChevronLeft size={14} />
+                  Back to logs
+                </button>
+                <LogSourceHeader
+                  source={source}
+                  onEvidence={() => navigate("Evidence")}
+                />
+                <ParsingSummary
+                  source={source}
+                  disabled={busy}
+                  stats={page.statistics}
+                  available={pageAvailable && !loading && !busy}
+                  pending={loading || busy}
+                  filtered={filtered}
+                  active={parseStatus}
+                  onFilter={statusFilter}
+                />
+                <TimelineChart
+                  stats={page.statistics}
+                  available={pageAvailable && !loading && !busy}
+                  pending={loading || busy}
+                  disabled={busy || loading}
+                  onRange={(from, to) => {
+                    rangeFilter([from, to]);
+                    setView("Explore");
+                  }}
+                />
+              </>
+            ) : (
+              <p>Import a source to view its statistics.</p>
+            )}
+          </section>
+        )}
         {view === "Evidence" && (
           <EvidenceView
             sources={caseInfo.sources}
@@ -816,7 +915,7 @@ export function App({ bridge }: { bridge: Bridge }) {
             </span>
           ) : (
             <span>
-              DFIR Log Explorer <span className="footer-version">v0.2.0</span>
+              DFIR Log Explorer <span className="footer-version">v0.2.1</span>
             </span>
           )}
         </footer>

@@ -36,6 +36,24 @@ x.XSetInputFocus.argtypes = [c.c_void_p, c.c_ulong, c.c_int, c.c_ulong]
 x.XRaiseWindow.argtypes = [c.c_void_p, c.c_ulong]
 
 
+class WindowAttributes(c.Structure):
+    _fields_ = [
+        ("x", c.c_int), ("y", c.c_int), ("width", c.c_int), ("height", c.c_int),
+        ("border_width", c.c_int), ("depth", c.c_int), ("visual", c.c_void_p),
+        ("root", c.c_ulong), ("window_class", c.c_int), ("bit_gravity", c.c_int),
+        ("win_gravity", c.c_int), ("backing_store", c.c_int),
+        ("backing_planes", c.c_ulong), ("backing_pixel", c.c_ulong),
+        ("save_under", c.c_int), ("colormap", c.c_ulong),
+        ("map_installed", c.c_int), ("map_state", c.c_int),
+        ("all_event_masks", c.c_long), ("your_event_mask", c.c_long),
+        ("do_not_propagate_mask", c.c_long), ("override_redirect", c.c_int),
+        ("screen", c.c_void_p),
+    ]
+
+
+x.XGetWindowAttributes.argtypes = [c.c_void_p, c.c_ulong, c.POINTER(WindowAttributes)]
+
+
 def dialogs(window=None):
     window = window or x.XDefaultRootWindow(display)
     result = []
@@ -43,7 +61,9 @@ def dialogs(window=None):
     if x.XFetchName(display, window, c.byref(name)) and name.value:
         title = name.value.decode(errors="replace")
         x.XFree(name)
-        if any(word in title.lower() for word in ("open", "save", "select")):
+        attributes = WindowAttributes()
+        visible = x.XGetWindowAttributes(display, window, c.byref(attributes)) and attributes.map_state == 2
+        if visible and any(word in title.lower() for word in ("open", "save", "select")):
             result.append((window, title))
     root, parent = c.c_ulong(), c.c_ulong()
     children, count = c.POINTER(c.c_ulong)(), c.c_uint()
@@ -135,7 +155,11 @@ def main():
             click(".sample-button")
             wait_for(lambda: summary() and len(summary()["sources"]) == 1)
             assert query()["total"] == 13
-            click(".case-bar button:nth-of-type(1)")
+            wait_for(lambda: script("return document.querySelectorAll('.table-row').length > 0"))
+            assert not script("return !!document.querySelector('.parsing-summary, .timeline-card, .additional-filters')")
+            assert script("return document.querySelector('.table-row').getBoundingClientRect().top") <= 220
+            click(".case-toggle")
+            click("[data-case-action=save]")
             location(path)
             wait_for(lambda: summary() and summary()["path"] == str(path))
             assert path.exists()
@@ -156,16 +180,20 @@ def main():
             assert detail["sourceId"] == 3
             assert detail["lineNumber"] == 1
             assert detail["jsonFields"]["context"]["synthetic"] is True
-            click(".case-bar button:nth-of-type(3)")
+            click(".case-toggle")
+            click("[data-case-action=new]")
             wait_for(lambda: summary() and len(summary()["sources"]) == 0)
             assert path.exists()
-            click(".case-bar button:nth-of-type(2)")
+            click(".case-toggle")
+            click("[data-case-action=open]")
             location(path)
             wait_for(lambda: summary() and len(summary()["sources"]) == 3)
             assert query()["total"] == 23
             assert summary()["sources"] == sources
+            wait_for(lambda: script("return [...document.querySelectorAll('[role=columnheader]')].some(element => element.textContent.includes('Source'))"))
             # Selected source provenance and combined filters through native UI.
             select("[aria-label='Source filter']", "3")
+            click("[aria-label='Additional filters']")
             select("[aria-label='Timestamp presence']", "false")
             wait_for(lambda: script("return document.querySelector('.table-footer')?.textContent.includes('1–3 of 3 events')"))
             click(".table-row")

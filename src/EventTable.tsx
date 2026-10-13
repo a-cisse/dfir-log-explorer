@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { displayTimestamp, formatBytes } from "./format";
 import { ParsingStatusBadge } from "./ParsingStatusBadge";
-import { usePreference } from "./preferences";
+import { usePreference, readPreference } from "./preferences";
 import type { EventRow, SortField, SourceSummary } from "./types";
 const columnOptions: { key: SortField; label: string; size: number }[] = [
   { key: "sourceId", label: "Source", size: 200 },
@@ -32,7 +32,12 @@ const columnOptions: { key: SortField; label: string; size: number }[] = [
   { key: "preview", label: "Raw log preview", size: 340 },
 ];
 const defaultColumns: SortField[] = [
-  "sourceId",
+  "lineNumber",
+  "timestamp",
+  "parseStatus",
+  "preview",
+];
+const previousDefault = [
   "lineNumber",
   "timestamp",
   "sourceIp",
@@ -42,6 +47,7 @@ const defaultColumns: SortField[] = [
   "parseStatus",
   "preview",
 ];
+
 interface Props {
   sources: SourceSummary[];
   rows: EventRow[];
@@ -66,13 +72,25 @@ export function EventTable({
 }: Props) {
   const parent = useRef<HTMLDivElement>(null);
   const [configuring, setConfiguring] = useState(false);
-  const [visible, setVisible] = usePreference<SortField[]>(
+  const validColumns = (v: unknown): v is SortField[] =>
+    Array.isArray(v) &&
+    v.includes("lineNumber") &&
+    v.every((key) => columnOptions.some((c) => c.key === key));
+  const migratedColumns = readPreference<SortField[]>(
     "columns",
     defaultColumns,
     (v): v is SortField[] =>
-      Array.isArray(v) &&
-      v.includes("lineNumber") &&
-      v.every((k) => columnOptions.some((c) => c.key === k)),
+      validColumns(v) &&
+      ![previousDefault, ["sourceId", ...previousDefault]].some(
+        (previous) =>
+          previous.length === v.length &&
+          previous.every((key, i) => key === v[i]),
+      ),
+  );
+  const [visible, setVisible] = usePreference<SortField[]>(
+    "columns.v2",
+    migratedColumns,
+    validColumns,
   );
   const columns = useMemo<ColumnDef<EventRow>[]>(
     () =>
@@ -158,7 +176,9 @@ export function EventTable({
   }, [rows]);
   const grid = table
     .getVisibleLeafColumns()
-    .map((c) => `${c.getSize()}px`)
+    .map((c) =>
+      c.id === "preview" ? `minmax(${c.getSize()}px, 1fr)` : `${c.getSize()}px`,
+    )
     .join(" ");
   const width = table.getTotalSize();
   function focusRow(index: number) {

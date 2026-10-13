@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronUp, ChartNoAxesColumn } from "lucide-react";
 import { formatNumber } from "./format";
 import type { Statistics } from "./types";
@@ -21,13 +21,7 @@ export function TimelineChart({
   available: boolean;
   pending: boolean;
 }) {
-  const [expanded, setExpanded] = useState(() => window.innerHeight > 760);
-  useEffect(() => {
-    const compact = window.matchMedia("(max-height: 760px)");
-    const resize = () => setExpanded(!compact.matches);
-    compact.addEventListener("change", resize);
-    return () => compact.removeEventListener("change", resize);
-  }, []);
+  const [expanded, setExpanded] = useState(true);
   const [view, setView] = useState<"parsing" | "http">("parsing");
   const buckets = stats.timeline;
   const values = buckets.map((b) =>

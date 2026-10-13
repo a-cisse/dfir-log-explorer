@@ -2,11 +2,10 @@ import type { ReactNode, RefObject } from "react";
 import {
   Activity,
   Braces,
-  ChevronRight,
+  ChartNoAxesColumn,
   CircleHelp,
   FileText,
   FolderOpen,
-  Layers,
   LoaderCircle,
   LockKeyhole,
   PanelLeftClose,
@@ -43,7 +42,7 @@ export function Sidebar({
     <aside className="sidebar" aria-label="Workspace navigation">
       <div className="brand">
         <span className="brand-mark">
-          <Layers size={22} />
+          <img src="/mark.svg" alt="" width={30} height={30} />
         </span>
         <div>
           <strong>DFIR</strong>
@@ -59,6 +58,7 @@ export function Sidebar({
           [
             { name: "Explore", icon: Activity },
             { name: "Evidence", icon: FolderOpen },
+            { name: "Statistics", icon: ChartNoAxesColumn },
             { name: "Parsers", icon: Braces },
             { name: "Settings", icon: Settings2 },
           ] as const
@@ -153,6 +153,8 @@ export function Topbar({
   searchInput,
   navigate,
   themeControl,
+  caseControl,
+  importControls,
 }: {
   source: SourceSummary | null;
   caseName: string;
@@ -162,14 +164,15 @@ export function Topbar({
   searchInput: RefObject<HTMLInputElement | null>;
   navigate: (view: View) => void;
   themeControl: ReactNode;
+  caseControl: ReactNode;
+  importControls: ReactNode;
 }) {
   return (
     <header className="topbar">
       <div className="breadcrumbs">
-        <span>Workspace</span>
-        <ChevronRight size={13} />
         <strong>{caseName}</strong>
       </div>
+      {caseControl}
       <div className="global-search">
         <Search size={16} />
         <input
@@ -196,6 +199,7 @@ export function Topbar({
           <kbd>Ctrl K</kbd>
         )}
       </div>
+      {importControls}
       <div className="topbar-actions">
         <span className="local-badge">
           <LockKeyhole size={12} />
@@ -215,15 +219,13 @@ export function Topbar({
     </header>
   );
 }
-export function PageHeading({
-  view,
+export function ImportActions({
   mode,
   setMode,
   disabled,
   picking,
   beginImport,
 }: {
-  view: View;
   mode: ParserMode;
   setMode: (mode: ParserMode) => void;
   disabled: boolean;
@@ -231,51 +233,52 @@ export function PageHeading({
   beginImport: () => Promise<void>;
 }) {
   return (
-    <div className="page-heading">
-      <div>
-        <span className="eyebrow">LOCAL INVESTIGATION WORKSPACE</span>
-        <h1>
-          {view}
-          <span className="heading-caption">
-            {view === "Explore"
-              ? "Read the evidence. Follow the details."
-              : view === "Evidence"
-                ? "Source integrity and provenance"
-                : view === "Parsers"
-                  ? "Built-in readers and validation"
-                  : "Workspace preferences"}
-          </span>
-        </h1>
-      </div>
-      <div className="import-actions">
-        <label className="parser-control">
-          <span>Parser</span>
-          <select
-            aria-label="Parser format"
-            value={mode}
-            disabled={disabled}
-            onChange={(e) => setMode(e.target.value as ParserMode)}
-          >
-            <option value="auto">Auto detect</option>
-            <option value="apache">Apache Common / Combined</option>
-            <option value="nginx">Nginx Access</option>
-            <option value="json_lines">JSON Lines</option>
-            <option value="text">Plain text</option>
-          </select>
-        </label>
-        <button
-          className="primary-button"
+    <div className="import-actions">
+      <label className="parser-control">
+        <span>Parser</span>
+        <select
+          aria-label="Parser format"
+          value={mode}
           disabled={disabled}
-          onClick={() => void beginImport()}
+          onChange={(e) => setMode(e.target.value as ParserMode)}
         >
-          {picking ? (
-            <LoaderCircle size={15} className="spin" />
-          ) : (
-            <Plus size={15} />
-          )}
-          Import log file
-        </button>
-      </div>
+          <option value="auto">Auto detect</option>
+          <option value="apache">Apache Common / Combined</option>
+          <option value="nginx">Nginx Access</option>
+          <option value="json_lines">JSON Lines</option>
+          <option value="text">Plain text</option>
+        </select>
+      </label>
+      <button
+        className="primary-button"
+        disabled={disabled}
+        onClick={() => void beginImport()}
+      >
+        {picking ? (
+          <LoaderCircle size={15} className="spin" />
+        ) : (
+          <Plus size={15} />
+        )}
+        Import log file
+      </button>
+    </div>
+  );
+}
+export function PageHeading({ view }: { view: View }) {
+  return (
+    <div className="page-heading">
+      <h1>
+        {view}
+        <span className="heading-caption">
+          {view === "Evidence"
+            ? "Source integrity and provenance"
+            : view === "Statistics"
+              ? "Parsing and time distribution"
+              : view === "Parsers"
+                ? "Built-in readers and validation"
+                : "Workspace preferences"}
+        </span>
+      </h1>
     </div>
   );
 }

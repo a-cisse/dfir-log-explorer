@@ -1,5 +1,6 @@
 import type { ParserMode } from "./types";
-export type View = "Explore" | "Evidence" | "Parsers" | "Settings";
+export type View =
+  "Explore" | "Evidence" | "Statistics" | "Parsers" | "Settings";
 export const parsers: {
   mode: ParserMode;
   name: string;
