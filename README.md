@@ -4,7 +4,7 @@
 
 A focused log exploration tool for digital forensic and incident response workflows. DFIR Log Explorer helps analysts turn collected log files into structured, searchable events, with the original log content and parsing diagnostics available alongside the results.
 
-**Project status:** `main` contains the accepted **MVP 0 (v0.1.0)**. **MVP 1 (v0.2.0)** is implemented and tested in [PR #3](https://github.com/a-cisse/dfir-log-explorer/pull/3), awaiting integration and human acceptance. Its additional capabilities are identified below as **MVP 1 review build**. These are early test builds, not a production release.
+**Project status:** `main` contains the accepted **MVP 0 (v0.1.0)**. **MVP 1 (v0.2.1)** is implemented and tested in [PR #3](https://github.com/a-cisse/dfir-log-explorer/pull/3), awaiting integration and human acceptance. Its additional capabilities are identified below as **MVP 1 review build**. These are early test builds, not a production release.
 
 ## Overview
 
@@ -32,7 +32,7 @@ These approaches remain useful for their own workflows. DFIR Log Explorer offers
 ## Why DFIR Log Explorer?
 
 - **Less repetitive preparation:** Built-in readers extract supported fields without requiring a new script or parsing expression for each supported dataset. Reducing time to investigation is a product objective, not a measured claim of superiority.
-- **Integrated exploration:** Move between the event table, timeline, filters and inspector within the same workspace.
+- **Integrated exploration:** Read imported events, search and inspect raw content in one workspace. In the MVP 1 review build, optional filters and statistics stay out of the default reading view.
 - **Visible parsing quality:** Separate successful interpretation, partial extraction and unrecognized records. Malformed lines can still be examined instead of disappearing from the results.
 - **Original content within reach:** Inspect raw text, source line numbers and byte offsets alongside extracted fields. Source hashes support comparison with the imported file.
 - **Local setup:** Log analysis uses an embedded database and packaged UI assets. It does not require an Elasticsearch, Kibana, Splunk or other externally managed log backend.
@@ -53,6 +53,7 @@ The tool is intended to complement existing workflows, including Graylog, Timesk
 
 ### Implemented in the MVP 1 review build
 
+- Start with a compact log table immediately after import: line, timestamp, parsing status and raw content. Open additional filters and Statistics when needed; save/open/new actions are grouped in the Case menu.
 - Save temporary analysis as a local `.dfir` case and reopen it without access to the original source files. Further imports into a saved case are retained automatically.
 - Append multiple sources to a case, with stable source identities, source summaries and the correct provenance in the event inspector. Duplicate imports remain distinct sources.
 - Select explicit Nginx access and JSON Lines readers, retaining original JSON fields and independent validation diagnostics.
@@ -87,15 +88,17 @@ Apache error logs, firewall/WAF/Syslog/HAProxy readers, binary logs and multilin
 
 ## Screenshots
 
-These existing captures show the MVP 0 interface on `main`, using synthetic data. The MVP 1 review build adds case management and source controls.
+These captures show the current MVP 1 v0.2.1 review build with synthetic evidence in the labeled browser preview. The default workspace prioritizes the logs; statistics and additional filters open on demand.
 
-Event exploration with filters and a compact timeline:
+Compact event exploration with raw content visible:
 
-![MVP 0 event table, parsing summary and timeline with synthetic Apache logs](docs/images/ui-ux-light.png)
+![MVP 1 compact log table with source and parsing filters](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/images/mvp-1-minimal-light.png)
 
-Inspecting a partially parsed event while retaining its raw content:
+Inspecting a partially parsed event alongside the logs:
 
-![MVP 0 inspector showing an invalid timestamp diagnostic and the original log line](docs/images/ui-ux-inspector.png)
+![MVP 1 inspector showing the original log line and invalid timestamp diagnostic](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/images/mvp-1-minimal-inspector.png)
+
+See the [minimal workspace report][mvp1-workspace] for layout checks and Dark mode. The [MVP 0 redesign report](docs/ui-ux-redesign.md) retains the earlier interface captures.
 
 ## Getting started
 
@@ -106,9 +109,9 @@ Initial supported platforms are **Ubuntu 24.04 x64** and **Windows 11 x64**. Suc
 - `dfir-log-explorer-linux`: a `.deb` package and application executable.
 - `dfir-log-explorer-windows`: an NSIS setup executable.
 
-Use the [MVP 0 workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-0.yml) for the integrated version, or the [MVP 1 review workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-1.yml) for the additional case/readers functionality. Check the branch and commit shown by the run, download your platform's artifact and extract it. Artifacts depend on successful platform builds and are retained for 14 days; build locally if a suitable artifact is unavailable.
+Use the [MVP 0 workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-0.yml) for the integrated version, or the [MVP 1 review workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-1.yml) for the additional case/readers functionality. Check the branch and commit shown by the run, download your platform's artifact and extract it. In MVP 1 v0.2.1, the setup executable (Windows), or package and executable (Linux), appear directly at the ZIP root. Artifacts depend on successful platform builds and are retained for 14 days; build locally if a suitable artifact is unavailable.
 
-On Ubuntu, install the `.deb` using your normal package manager. On Windows, run the setup executable. Windows test packages are unsigned. Follow the [MVP 0 acceptance guide](docs/mvp-0-acceptance.md) or [MVP 1 acceptance guide][mvp1-acceptance] for the version you downloaded. See [build verification](docs/ci/README.md) for the integrated workflow.
+On Ubuntu, install the `.deb` using your normal package manager. On Windows, run the setup executable. Windows test packages are unsigned. Follow the [MVP 0 acceptance guide](docs/mvp-0-acceptance.md) or [MVP 1 acceptance guide][mvp1-acceptance] for the version you downloaded. See [build verification](docs/ci/README.md) for the integrated workflow and [MVP 1 build verification][mvp1-builds] for the corrected downloads.
 
 Packaged applications do not require Rust or Node.js runtimes. They use the operating system's webview: WebKitGTK on Linux and WebView2 on Windows. The Windows package embeds the offline WebView2 installer, so installing that runtime does not require an Internet connection. The shared runtime can subsequently be maintained by Windows; bundling a fixed runtime is a future distribution improvement.
 
@@ -132,7 +135,7 @@ cd dfir-log-explorer
 A fresh clone checks out `main` (MVP 0). To reproduce the verified MVP 1 review implementation, switch to its revision before installing dependencies:
 
 ```sh
-git switch --detach e886a5f6efe50de4e68f5f02b1237ab01fbc46d4
+git switch --detach 5c69aa66df16ea40e153d4ffeba12c9a6f955695
 ```
 
 Then install dependencies and launch the desktop application:
@@ -162,15 +165,15 @@ Open `http://127.0.0.1:1420` and choose **Explore a synthetic sample**. Browser 
 ## Usage
 
 1. Select **Auto detect** or the appropriate preconfigured reader, then choose **Import log file** in the desktop app. For a first walkthrough, use the synthetic sample.
-2. Review Parsed, Partial, Unparsed and warning counts before relying on extracted fields.
+2. Start reading logs and check their Parsed, Partial, Unparsed and warning indicators before relying on extracted fields. MVP 1 shows raw content by default; add extracted-field columns as needed.
 3. Search for an IP address, request path or timestamp. In the sample, `POST /LOGIN` matches two events regardless of case.
-4. Combine exact-field, parsing or warning filters with a UTC time range. Sort across all matching events or select a timeline interval to narrow the results.
+4. Combine exact-field, parsing or warning filters with a UTC time range. In MVP 1, open **Filters** for additional controls, or **Statistics** for aggregates and timeline intervals. Selecting an interval returns to matching logs.
 5. Select an event and switch between **Details**, **Raw Log** and **Parse Diagnostics**. Check the original line and byte offset against the source when necessary.
-6. In **MVP 1**, use **Save case as…** to retain the analysis, add further sources with **Import log file**, and select a source or all sources for exploration. Use **Open case…** to resume the saved investigation.
+6. In **MVP 1**, open **Case → Save case as…** to retain the analysis, add further sources with **Import log file**, and select a source or all sources for exploration. Use **Case → Open case…** to resume the saved investigation.
 
 Table/inspector timestamps retain source offsets; timeline intervals and time filters use UTC, with an inclusive start and exclusive end. Missing or invalid timestamps stay outside time ranges and the timeline. MVP 1 rejects ambiguous JSON dates and does not guess the units of numeric timestamps; see the [date rules][mvp1-formats].
 
-Shortcuts include **Ctrl/Cmd O** to import, **Ctrl/Cmd K** to focus search, arrow keys to navigate visible rows, **Enter** to inspect and **Esc** to close the inspector or help.
+Shortcuts include **Ctrl/Cmd O** to import, **Ctrl/Cmd K** to focus search, arrow keys to navigate visible rows, **Enter** to inspect and **Esc** to close the inspector or help (also the Case menu in MVP 1).
 
 ## Technical limits and local data handling
 
@@ -205,7 +208,7 @@ The long-term direction is a local investigation workspace with more validated r
 | Stage | Status and scope                                                                                                                                                                                                                                    |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | MVP 0 | Accepted and integrated: temporary single-source exploration, Apache/text readers, transparent parsing and raw inspection. The UI redesign also added basic structured/time filters, global sorting, statistics and a bounded interactive timeline. |
-| MVP 1 | Implemented in review: persistent cases, multiple sources, Nginx/JSON Lines readers, additional structured filters and date/time handling.                                                                                                          |
+| MVP 1 | Implemented in review: persistent cases, multiple sources, Nginx/JSON Lines readers, additional structured filters and date/time handling, with a compact default log view and flat download archives.                                              |
 | MVP 2 | Planned: selected firewall/WAF/Syslog/HAProxy formats and necessary multiline handling.                                                                                                                                                             |
 | MVP 3 | Planned: expanded timeline/statistics workflows and saved searches; basic timeline/statistics are already available.                                                                                                                                |
 | MVP 4 | Planned: custom local parsing profiles with previews and versioning.                                                                                                                                                                                |
@@ -251,9 +254,11 @@ Additional documentation: [architecture](docs/architecture.md), [UI/UX audit](do
 
 Project code is licensed under the [MIT License](LICENSE). The locally bundled Inter font is distributed under the [SIL Open Font License](public/licenses/Inter-OFL.txt). Dependency licenses remain applicable to their respective components.
 
-[mvp1-acceptance]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/mvp-1-acceptance.md
-[mvp1-formats]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/mvp-1-formats.md
-[mvp1-validation]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/mvp-1-validation.md
-[mvp1-privacy]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/privacy.md
-[mvp1-roadmap]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/roadmap.md
-[mvp1-architecture]: https://github.com/a-cisse/dfir-log-explorer/blob/e886a5f6efe50de4e68f5f02b1237ab01fbc46d4/docs/architecture.md
+[mvp1-acceptance]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/mvp-1-acceptance.md
+[mvp1-formats]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/mvp-1-formats.md
+[mvp1-validation]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/mvp-1-validation.md
+[mvp1-privacy]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/privacy.md
+[mvp1-roadmap]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/roadmap.md
+[mvp1-architecture]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/architecture.md
+[mvp1-workspace]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/minimal-workspace.md
+[mvp1-builds]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/ci/README.md
