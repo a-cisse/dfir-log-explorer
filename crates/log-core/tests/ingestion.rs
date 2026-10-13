@@ -299,3 +299,260 @@ fn rejects_compressed_binary_and_utf16_sources_without_replacing_data() {
         assert_eq!(engine.query(&query("keep this")).unwrap().total, 1);
     }
 }
+
+#[test]
+fn parsing_statuses_fields_filters_and_aggregates_use_all_source_rows() {
+    let file = source(include_bytes!("../../../tests/fixtures/apache-mixed.log"));
+    let mut engine = Engine::new().unwrap();
+    let summary = engine
+        .import(
+            file.path(),
+            ParserMode::Auto,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+    assert_eq!(
+        (
+            summary.parsed_events,
+            summary.partial_events,
+            summary.unparsed_events
+        ),
+        (11, 1, 1)
+    );
+    let all = engine
+        .query(&Query {
+            limit: 2,
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(all.rows.len(), 2);
+    let stats = &all.statistics;
+    assert_eq!(
+        (stats.total, stats.parsed, stats.partial, stats.unparsed),
+        (13, 11, 1, 1)
+    );
+    assert_eq!(stats.warnings, 1);
+    assert_eq!(stats.total_requests, 12);
+    assert_eq!(stats.unique_ips, 8);
+    assert_eq!(stats.responses, [7, 0, 4, 1]);
+    assert_eq!(stats.missing_timestamp, 2);
+    assert!(stats.timeline.len() <= 32);
+    assert_eq!(
+        stats
+            .timeline
+            .iter()
+            .map(|b| b.parsed + b.partial + b.unparsed)
+            .sum::<u64>(),
+        11
+    );
+    assert_eq!(
+        stats
+            .timeline
+            .iter()
+            .map(|b| b.responses.iter().sum::<u64>())
+            .sum::<u64>(),
+        11
+    );
+    let partial = engine
+        .query(&Query {
+            parse_status: Some(ParseStatus::Partial),
+            only_warnings: true,
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(partial.total, 1);
+    assert_eq!(
+        partial.rows[0].fields.source_ip.as_deref(),
+        Some("192.0.2.14")
+    );
+    assert_eq!(partial.rows[0].fields.timestamp_ms, None);
+    assert_eq!(partial.rows[0].fields.status, Some(200));
+    let raw = engine
+        .query(&Query {
+            parse_status: Some(ParseStatus::Unparsed),
+            search_field: SearchField::Raw,
+            ..query("<img src=")
+        })
+        .unwrap();
+    assert_eq!(raw.total, 1);
+    assert_eq!(raw.rows[0].line_number, 11);
+    assert_eq!(raw.statistics.timeline.len(), 0);
+    let ip = engine
+        .query(&Query {
+            field_filter: Some(FieldFilter {
+                field: SearchField::SourceIp,
+                value: "198.51.100.24".into(),
+            }),
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(ip.total, 3);
+    assert_eq!(ip.statistics.responses, [0, 0, 3, 0]);
+    let timestamp = engine
+        .query(&Query {
+            search_field: SearchField::Timestamp,
+            ..query("2026-10-13T09:14:00")
+        })
+        .unwrap();
+    assert_eq!(timestamp.total, 1); // ISO timestamp is extracted, absent from raw Apache timestamp.
+    assert_eq!(
+        engine
+            .query(&Query {
+                search_field: SearchField::Raw,
+                ..query("2026-10-13T09:14:00")
+            })
+            .unwrap()
+            .total,
+        0
+    );
+    let first_ms = engine.detail(1).unwrap().event.fields.timestamp_ms.unwrap();
+    let range = engine
+        .query(&Query {
+            time_from: Some(first_ms),
+            time_to: Some(first_ms + 1000),
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(range.total, 1); // End is exclusive; invalid and missing timestamps are excluded.
+    let sorted = engine
+        .query(&Query {
+            sort_by: SortField::Status,
+            descending: true,
+            limit: 2,
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(sorted.rows[0].fields.status, Some(502));
+    assert_eq!(sorted.rows[1].fields.status, Some(404));
+    assert_eq!(sorted.statistics.total, 13);
+    assert!(engine
+        .query(&Query {
+            time_from: Some(2),
+            time_to: Some(1),
+            ..query("")
+        })
+        .is_err());
+    assert!(engine
+        .query(&Query {
+            field_filter: Some(FieldFilter {
+                field: SearchField::Path,
+                value: "x".repeat(4097)
+            }),
+            ..query("")
+        })
+        .is_err());
+    assert!(engine
+        .query(&Query {
+            time_from: Some(i64::MIN),
+            ..query("")
+        })
+        .is_err());
+    assert!(engine
+        .query(&Query {
+            field_filter: Some(FieldFilter {
+                field: SearchField::Path,
+                value: "' OR 1=1 --".into()
+            }),
+            ..query("")
+        })
+        .unwrap()
+        .rows
+        .is_empty());
+}
+
+#[test]
+fn successful_import_invalidates_aggregate_cache_and_rollback_preserves_it() {
+    let mut engine = Engine::new().unwrap();
+    let old = source(b"old\n");
+    engine
+        .import(
+            old.path(),
+            ParserMode::Text,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+    assert_eq!(engine.query(&query("")).unwrap().statistics.parsed, 1);
+    let next = source(b"next\nnext two\n");
+    assert!(engine
+        .import(
+            next.path(),
+            ParserMode::Text,
+            &AtomicBool::new(true),
+            |_| {}
+        )
+        .is_err());
+    assert_eq!(engine.query(&query("")).unwrap().statistics.total, 1);
+    engine
+        .import(
+            next.path(),
+            ParserMode::Auto,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+    let stats = engine.query(&query("")).unwrap().statistics;
+    assert_eq!((stats.total, stats.parsed, stats.unparsed), (2, 0, 2));
+}
+
+#[test]
+fn old_query_payloads_remain_compatible_and_unknown_columns_are_rejected() {
+    let legacy: Query =
+        serde_json::from_str(r#"{"search":"","onlyWarnings":false,"offset":0,"limit":500}"#)
+            .unwrap();
+    assert!(legacy.is_original_order());
+    assert!(serde_json::from_str::<Query>(r#"{"sortBy":"id; DROP TABLE events"}"#).is_err());
+    assert!(serde_json::from_str::<Query>(r#"{"searchField":"nonexistent"}"#).is_err());
+}
+
+#[test]
+fn sorting_and_statistics_are_global_beyond_the_first_page() {
+    let common = "192.0.2.10 - - [13/Oct/2026:09:14:00 +0000] \"GET / HTTP/1.1\" 200 42\n";
+    let data = format!(
+        "{}{}",
+        common.repeat(1000),
+        common.replace("200 42", "503 42")
+    );
+    let file = source(data.as_bytes());
+    let mut engine = Engine::new().unwrap();
+    engine
+        .import(
+            file.path(),
+            ParserMode::Apache,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+    let sorted = engine
+        .query(&Query {
+            limit: 1,
+            sort_by: SortField::Status,
+            descending: true,
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(sorted.rows[0].id, 1001);
+    assert_eq!(sorted.statistics.total, 1001);
+    assert_eq!(sorted.statistics.responses, [1000, 0, 0, 1]);
+    let last = engine
+        .query(&Query {
+            offset: 1000,
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(last.rows.len(), 1);
+    assert_eq!(last.rows[0].id, 1001);
+    assert_eq!(
+        last.statistics
+            .timeline
+            .iter()
+            .map(|b| b.parsed)
+            .sum::<u64>(),
+        1001
+    );
+    assert_eq!(
+        engine.query(&query("2026-10-13T09:14:00")).unwrap().total,
+        1001
+    );
+}

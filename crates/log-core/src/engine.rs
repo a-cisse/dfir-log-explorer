@@ -1,5 +1,7 @@
-use crate::{parse_line, ParsedFields, ParserMode};
-use duckdb::{params, Config, Connection};
+use crate::{
+    parse_line, query::statistics, ParseStatus, ParsedFields, ParserMode, Query, Statistics,
+};
+use duckdb::{params, params_from_iter, types::Value, Config, Connection};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -20,7 +22,7 @@ pub const PAGE_SIZE: u32 = 500;
 const LIST_COLUMNS: &str = "id, line_number, byte_offset, substring(message, 1, 240), parser,
     timestamp, timestamp_ms, substring(source_ip, 1, 160), substring(method, 1, 32),
     substring(path, 1, 240), substring(protocol, 1, 32), status, response_bytes,
-    substring(referrer, 1, 240), substring(user_agent, 1, 240), substring(parse_error, 1, 512)";
+    substring(referrer, 1, 240), substring(user_agent, 1, 240), substring(parse_error, 1, 512), parse_status";
 
 #[derive(Debug, Error)]
 pub enum EngineError {
@@ -40,7 +42,7 @@ pub enum EngineError {
     NotRegularFile,
     #[error("This version supports uncompressed UTF-8 text logs. Compressed, UTF-16, and binary formats need a dedicated reader.")]
     UnsupportedFormat,
-    #[error("Invalid query: limit must be 1–500, offset nonnegative, and search at most 4096 characters.")]
+    #[error("Invalid query: use a 1–500 limit, nonnegative offset, values up to 4096 characters, and a valid increasing time range.")]
     InvalidQuery,
     #[error("The selected event does not exist in this session.")]
     EventNotFound,
@@ -59,6 +61,10 @@ pub struct ImportProgress {
 #[serde(rename_all = "camelCase")]
 pub struct SourceSummary {
     pub name: String,
+    pub provenance: String,
+    pub parser_mode: ParserMode,
+    pub partial_events: u64,
+    pub unparsed_events: u64,
     pub total_bytes: u64,
     pub total_events: u64,
     pub parsed_events: u64,
@@ -66,15 +72,6 @@ pub struct SourceSummary {
     pub warning_events: u64,
     pub sha256: String,
     pub elapsed_ms: u64,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Query {
-    pub search: String,
-    pub only_warnings: bool,
-    pub offset: u64,
-    pub limit: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +97,7 @@ pub struct EventDetail {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryPage {
+    pub statistics: Statistics,
     pub rows: Vec<EventRow>,
     pub total: u64,
     pub offset: u64,
@@ -109,7 +107,10 @@ pub struct QueryPage {
 
 /// One temporary, disk-backed database per analysis session. A single owner
 /// serializes access; the desktop layer runs all operations off the UI thread.
+type StatisticsCache = std::collections::VecDeque<(String, Vec<Value>, Statistics)>;
+
 pub struct Engine {
+    statistics_cache: std::cell::RefCell<StatisticsCache>,
     connection: Connection,
     _storage: TempDir,
 }
@@ -135,10 +136,11 @@ impl Engine {
                 message VARCHAR, parser VARCHAR, timestamp VARCHAR, timestamp_ms BIGINT,
                 source_ip VARCHAR, method VARCHAR, path VARCHAR, protocol VARCHAR,
                 status INTEGER, response_bytes BIGINT, referrer VARCHAR, user_agent VARCHAR,
-                parse_error VARCHAR
+                parse_error VARCHAR, parse_status VARCHAR
              );",
         )?;
         Ok(Self {
+            statistics_cache: std::cell::RefCell::new(StatisticsCache::new()),
             connection,
             _storage: storage,
         })
@@ -176,8 +178,15 @@ impl Engine {
         }
         let mut buffer = Vec::with_capacity(4096);
         let mut hash = Sha256::new();
-        let (mut bytes_read, mut lines, mut parsed, mut text, mut warnings) =
-            (0u64, 0u64, 0u64, 0u64, 0u64);
+        let (
+            mut bytes_read,
+            mut lines,
+            mut parsed,
+            mut text,
+            mut warnings,
+            mut partial,
+            mut unparsed,
+        ) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
 
         self.connection.execute_batch("BEGIN TRANSACTION;")?;
         let result = (|| {
@@ -217,7 +226,9 @@ impl Engine {
                     });
                 }
                 lines += 1;
-                parsed += u64::from(fields.parser == "apache");
+                parsed += u64::from(fields.parse_status == ParseStatus::Parsed);
+                partial += u64::from(fields.parse_status == ParseStatus::Partial);
+                unparsed += u64::from(fields.parse_status == ParseStatus::Unparsed);
                 text += u64::from(fields.parser == "text");
                 warnings += u64::from(fields.parse_error.is_some());
                 appender.append_row(params![
@@ -238,6 +249,7 @@ impl Engine {
                     fields.referrer,
                     fields.user_agent,
                     fields.parse_error,
+                    fields.parse_status.as_str(),
                 ])?;
                 bytes_read += size as u64;
                 if last_progress.elapsed() >= Duration::from_millis(100) {
@@ -270,6 +282,7 @@ impl Engine {
             self.connection.execute_batch("ROLLBACK;")?;
             return Err(error);
         }
+        self.statistics_cache.borrow_mut().clear();
         progress(ImportProgress {
             bytes_read,
             total_bytes,
@@ -277,6 +290,10 @@ impl Engine {
             elapsed_ms: started.elapsed().as_millis() as u64,
         });
         Ok(SourceSummary {
+            provenance: path.to_string_lossy().into_owned(),
+            parser_mode: mode,
+            partial_events: partial,
+            unparsed_events: unparsed,
             name: path
                 .file_name()
                 .unwrap_or_default()
@@ -293,52 +310,51 @@ impl Engine {
     }
 
     pub fn query(&self, query: &Query) -> Result<QueryPage, EngineError> {
-        if query.limit == 0
-            || query.limit > PAGE_SIZE
-            || query.offset > i64::MAX as u64
-            || query.search.chars().count() > 4096
-        {
-            return Err(EngineError::InvalidQuery);
-        }
         let started = Instant::now();
-        let (total, rows) = if query.search.is_empty() && !query.only_warnings {
-            let total: i64 =
-                self.connection
-                    .query_row("SELECT count(*) FROM events", [], |row| row.get(0))?;
-            // Every source line is retained, including blank and malformed
-            // lines, so IDs are contiguous. Unfiltered offsets map directly to
-            // an ID boundary and avoid sorting/skipping all preceding events.
+        let (predicate, values) = query.predicate()?;
+        let cached = self
+            .statistics_cache
+            .borrow()
+            .iter()
+            .find(|(p, v, _)| p == &predicate && v == &values)
+            .map(|(_, _, s)| s.clone());
+        let statistics = match cached {
+            Some(stats) => stats,
+            None => {
+                let stats = statistics(&self.connection, &predicate, &values)?;
+                let mut cache = self.statistics_cache.borrow_mut();
+                if cache.len() == 4 {
+                    cache.pop_front();
+                }
+                cache.push_back((predicate.clone(), values.clone(), stats.clone()));
+                stats
+            }
+        };
+        let total = statistics.total;
+        let rows = if query.is_original_order() {
             let mut statement = self.connection.prepare(&format!(
                 "SELECT {LIST_COLUMNS} FROM events WHERE id > ? ORDER BY id LIMIT ?"
             ))?;
-            let rows = statement
+            statement
                 .query_map(params![query.offset as i64, query.limit], event_row)?
-                .collect::<Result<Vec<_>, _>>()?;
-            (total, rows)
+                .collect::<Result<Vec<_>, _>>()?
         } else {
-            let total: i64 = self.connection.query_row(
-                "SELECT count(*) FROM events WHERE contains(lower(message), lower(?)) AND (NOT ? OR parse_error IS NOT NULL)",
-                params![query.search, query.only_warnings], |row| row.get(0),
-            )?;
+            let direction = if query.descending { "DESC" } else { "ASC" };
             let mut statement = self.connection.prepare(&format!(
-                "SELECT {LIST_COLUMNS} FROM events WHERE contains(lower(message), lower(?)) AND (NOT ? OR parse_error IS NOT NULL) ORDER BY id LIMIT ? OFFSET ?"
+                "SELECT {LIST_COLUMNS} FROM events WHERE {predicate} ORDER BY {} {direction} NULLS LAST, id ASC LIMIT ? OFFSET ?",
+                query.sort_by.sql()
             ))?;
-            let rows = statement
-                .query_map(
-                    params![
-                        query.search,
-                        query.only_warnings,
-                        query.limit,
-                        query.offset as i64
-                    ],
-                    event_row,
-                )?
-                .collect::<Result<Vec<_>, _>>()?;
-            (total, rows)
+            let mut page_values = values;
+            page_values.push(Value::BigInt(query.limit as i64));
+            page_values.push(Value::BigInt(query.offset as i64));
+            statement
+                .query_map(params_from_iter(page_values.iter()), event_row)?
+                .collect::<Result<Vec<_>, _>>()?
         };
         Ok(QueryPage {
+            statistics,
             rows,
-            total: total as u64,
+            total,
             offset: query.offset,
             limit: query.limit,
             elapsed_ms: started.elapsed().as_millis() as u64,
@@ -352,15 +368,15 @@ impl Engine {
         let mut statement = self.connection.prepare(
             "SELECT id, line_number, byte_offset, substring(message, 1, 240), parser,
                     timestamp, timestamp_ms, source_ip, method, path, protocol, status,
-                    response_bytes, referrer, user_agent, parse_error, message, raw
+                    response_bytes, referrer, user_agent, parse_error, parse_status, message, raw
              FROM events WHERE id = ?",
         )?;
         let mut rows = statement.query(params![id as i64])?;
         let row = rows.next()?.ok_or(EngineError::EventNotFound)?;
-        let raw_bytes: Vec<u8> = row.get(17)?;
+        let raw_bytes: Vec<u8> = row.get(18)?;
         Ok(EventDetail {
             event: event_row(row)?,
-            raw: row.get(16)?,
+            raw: row.get(17)?,
             raw_hex: std::str::from_utf8(&raw_bytes)
                 .err()
                 .map(|_| raw_bytes.iter().map(|byte| format!("{byte:02x}")).collect()),
@@ -376,6 +392,11 @@ fn event_row(row: &duckdb::Row<'_>) -> duckdb::Result<EventRow> {
         preview: row.get(3)?,
         fields: ParsedFields {
             parser: row.get(4)?,
+            parse_status: match row.get::<_, String>(16)?.as_str() {
+                "parsed" => ParseStatus::Parsed,
+                "partial" => ParseStatus::Partial,
+                _ => ParseStatus::Unparsed,
+            },
             timestamp: row.get(5)?,
             timestamp_ms: row.get(6)?,
             source_ip: row.get(7)?,
