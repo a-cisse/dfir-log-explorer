@@ -16,6 +16,8 @@ Normal engine teardown removes the temporary directory. A crash, power loss, or 
 
 Technical startup errors contain no log payloads. The UI displays import errors locally. The application does not create diagnostic files containing events or automatically upload debugging output.
 
+Appearance preferences (Light/Dark/System, collapsed sidebar and visible columns) are stored in the local webview/browser storage. Source content, provenance, search terms and filters are not stored in these preferences. Copy actions write only the explicitly selected value or displayed raw line to the operating-system clipboard.
+
 ## Operating-system boundary
 
 The application does not control operating-system telemetry, crash dumps, antivirus submissions, synchronized temporary directories, backup software, or a shared WebView2 runtime's independent maintenance. The Windows package initially embeds the offline runtime installer rather than a fixed runtime. A native traffic audit and interactive platform testing are required before claiming a verified zero-egress runtime environment.

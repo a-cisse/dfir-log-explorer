@@ -133,6 +133,7 @@ async fn start_import(
         result.map(|mut summary| {
             if is_demo {
                 summary.name = "apache-mixed.log (synthetic sample)".into();
+                summary.provenance = "Bundled synthetic fixture".into();
             }
             summary
         })

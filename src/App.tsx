@@ -1,41 +1,44 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity,
   AlertTriangle,
-  ArrowDownToLine,
   ArrowRight,
-  Check,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
   FileText,
-  Fingerprint,
   FlaskConical,
   FolderOpen,
-  HardDrive,
-  Layers,
   LoaderCircle,
   LockKeyhole,
+  Monitor,
   Moon,
-  Plus,
-  Search,
-  ShieldCheck,
   Sun,
   X,
 } from "lucide-react";
+import { Sidebar, Topbar, PageHeading } from "./WorkspaceChrome";
+import { EvidenceView, ParsersView, SettingsView } from "./WorkspaceViews";
+import { LogSourceHeader } from "./LogSourceHeader";
+import { HelpDialog } from "./HelpDialog";
+import type { View } from "./workspace";
 import { DetailPanel } from "./DetailPanel";
 import { EventTable } from "./EventTable";
+import { ParsingSummary } from "./ParsingSummary";
+import { TimelineChart } from "./TimelineChart";
+import { LogFilterBar } from "./LogFilterBar";
 import { formatBytes, formatNumber } from "./format";
+import { usePreference, useTheme, type Theme } from "./preferences";
 import type {
   Bridge,
   EventDetail,
   EventRow,
+  FieldFilter,
   ImportProgress,
   ParserMode,
+  ParseStatus,
   QueryPage,
+  SearchField,
+  SortField,
   SourceSummary,
 } from "./types";
-
 const PAGE_SIZE = 500;
 const emptyPage: QueryPage = {
   rows: [],
@@ -43,59 +46,74 @@ const emptyPage: QueryPage = {
   offset: 0,
   limit: PAGE_SIZE,
   elapsedMs: 0,
+  statistics: {
+    total: 0,
+    parsed: 0,
+    partial: 0,
+    unparsed: 0,
+    warnings: 0,
+    missingTimestamp: 0,
+    totalRequests: 0,
+    uniqueIps: 0,
+    responses: [0, 0, 0, 0],
+    timeline: [],
+  },
 };
-
 export function App({ bridge }: { bridge: Bridge }) {
   const [source, setSource] = useState<SourceSummary | null>(null);
   const [page, setPage] = useState<QueryPage>(emptyPage);
   const [mode, setMode] = useState<ParserMode>("auto");
+  const [view, setView] = useState<View>("Explore");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [scope, setScope] = useState<SearchField>("all");
   const [onlyWarnings, setOnlyWarnings] = useState(false);
+  const [parseStatus, setParseStatus] = useState<ParseStatus | null>(null);
+  const [fieldFilter, setFieldFilter] = useState<FieldFilter | null>(null);
+  const [timeRange, setTimeRange] = useState<[number | null, number | null]>([
+    null,
+    null,
+  ]);
+  const [sortBy, setSortBy] = useState<SortField>("lineNumber");
+  const [descending, setDescending] = useState(false);
   const [offset, setOffset] = useState(0);
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [pageAvailable, setPageAvailable] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const [importName, setImportName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [sourceInfo, setSourceInfo] = useState(false);
   const [help, setHelp] = useState(false);
-  const [dark, setDark] = useState(false);
+  const [theme, setTheme] = useTheme();
+  const [collapsed, setCollapsed] = usePreference<boolean>(
+    "sidebarCollapsed",
+    false,
+    (v): v is boolean => typeof v === "boolean",
+  );
   const searchInput = useRef<HTMLInputElement>(null);
   const detailRequest = useRef(0);
   const importRunning = useRef(false);
   const disabled = busy || picking;
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-  }, [dark]);
-  useEffect(() => {
-    if (!help && !sourceInfo) return;
-    const dialog = document.querySelector<HTMLElement>(".modal");
-    if (!dialog) return;
-    const trapFocus = (event: KeyboardEvent) => {
-      if (event.key !== "Tab") return;
-      const controls = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          "button, a, input, select, [tabindex='0']",
-        ),
-      );
-      const first = controls[0];
-      const last = controls.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    dialog.addEventListener("keydown", trapFocus);
-    return () => dialog.removeEventListener("keydown", trapFocus);
-  }, [help, sourceInfo]);
+  const closeDetails = useCallback(() => {
+    detailRequest.current++;
+    setDetail(null);
+    setDetailLoading(false);
+  }, []);
+  const resetFilters = useCallback(() => {
+    setSearch("");
+    setDebouncedSearch("");
+    setOnlyWarnings(false);
+    setParseStatus(null);
+    setScope("all");
+    setFieldFilter(null);
+    setTimeRange([null, null]);
+    setOffset(0);
+  }, []);
   useEffect(() => {
     const timeout = setTimeout(() => {
       setOffset(0);
@@ -103,7 +121,21 @@ export function App({ bridge }: { bridge: Bridge }) {
     }, 250);
     return () => clearTimeout(timeout);
   }, [search]);
-
+  useEffect(() => {
+    closeDetails();
+  }, [
+    source,
+    debouncedSearch,
+    scope,
+    onlyWarnings,
+    parseStatus,
+    fieldFilter,
+    timeRange,
+    sortBy,
+    descending,
+    offset,
+    closeDetails,
+  ]);
   useEffect(() => {
     if (!source || busy) return;
     let current = true;
@@ -111,27 +143,49 @@ export function App({ bridge }: { bridge: Bridge }) {
     bridge
       .query({
         search: debouncedSearch,
+        searchField: scope,
         onlyWarnings,
+        parseStatus,
+        fieldFilter,
+        timeFrom: timeRange[0],
+        timeTo: timeRange[1],
+        sortBy,
+        descending,
         offset,
         limit: PAGE_SIZE,
       })
       .then((result) => {
         if (current) {
           setPage(result);
+          setPageAvailable(true);
           setLoading(false);
         }
       })
       .catch((reason: unknown) => {
         if (current) {
           setError(String(reason));
+          setPage(emptyPage);
+          setPageAvailable(false);
           setLoading(false);
         }
       });
     return () => {
       current = false;
     };
-  }, [bridge, source, debouncedSearch, onlyWarnings, offset, busy]);
-
+  }, [
+    bridge,
+    source,
+    debouncedSearch,
+    scope,
+    onlyWarnings,
+    parseStatus,
+    fieldFilter,
+    timeRange,
+    sortBy,
+    descending,
+    offset,
+    busy,
+  ]);
   const beginImport = useCallback(
     async (demo = false) => {
       if (importRunning.current) return;
@@ -144,8 +198,11 @@ export function App({ bridge }: { bridge: Bridge }) {
           const name = await bridge.pickFile();
           setPicking(false);
           if (!name) return;
+          setImportName(name);
+        } else {
+          setImportName("apache-mixed.log · synthetic sample");
         }
-        detailRequest.current++;
+        closeDetails();
         setBusy(true);
         setProgress(null);
         setCancelling(false);
@@ -153,15 +210,14 @@ export function App({ bridge }: { bridge: Bridge }) {
           ? bridge.importDemo(setProgress)
           : bridge.importFile(mode, setProgress));
         setSource(summary);
-        setDetail(null);
-        setSourceInfo(false);
-        setSearch("");
-        setDebouncedSearch("");
-        setOnlyWarnings(false);
-        setOffset(0);
+        setView("Explore");
+        resetFilters();
+        setSortBy("lineNumber");
+        setDescending(false);
         setPage(emptyPage);
+        setPageAvailable(false);
         setNotice(
-          `Imported ${formatNumber(summary.totalEvents)} events. Your source file was left unchanged.`,
+          `Imported ${formatNumber(summary.totalEvents)} lines. Source file unchanged.`,
         );
       } catch (reason) {
         const message =
@@ -176,41 +232,69 @@ export function App({ bridge }: { bridge: Bridge }) {
         setProgress(null);
       }
     },
-    [bridge, mode],
+    [bridge, mode, closeDetails, resetFilters],
   );
-
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        searchInput.current?.focus();
+        setView("Explore");
+        requestAnimationFrame(() => searchInput.current?.focus());
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
         event.preventDefault();
         if (!disabled) void beginImport();
       }
       if (event.key === "Escape") {
-        detailRequest.current++;
-        setDetail(null);
-        setSourceInfo(false);
+        closeDetails();
         setHelp(false);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [beginImport, disabled]);
-
+  }, [beginImport, disabled, closeDetails]);
+  useEffect(() => {
+    if (!help) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = document.querySelector<HTMLElement>(".modal");
+    if (!dialog) return;
+    dialog.querySelector<HTMLElement>("button")?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const controls = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          "button, a, input, select, [tabindex='0']",
+        ),
+      );
+      const first = controls[0],
+        last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    dialog.addEventListener("keydown", trap);
+    return () => {
+      dialog.removeEventListener("keydown", trap);
+      previous?.focus();
+    };
+  }, [help]);
   async function selectEvent(row: EventRow) {
-    if (busy) return;
+    if (busy || loading) return;
     const request = ++detailRequest.current;
+    setDetailLoading(true);
     try {
       const selected = await bridge.detail(row.id);
       if (request === detailRequest.current) setDetail(selected);
     } catch (reason) {
       if (request === detailRequest.current) setError(String(reason));
+    } finally {
+      if (request === detailRequest.current) setDetailLoading(false);
     }
   }
-
   async function cancel() {
     setCancelling(true);
     try {
@@ -220,422 +304,277 @@ export function App({ bridge }: { bridge: Bridge }) {
       setCancelling(false);
     }
   }
-
+  function statusFilter(status: ParseStatus | null) {
+    setParseStatus(status);
+    setOffset(0);
+    setView("Explore");
+  }
+  function exactFilter(filter: FieldFilter | null) {
+    setFieldFilter(filter);
+    setOffset(0);
+  }
+  function rangeFilter(range: [number | null, number | null]) {
+    setTimeRange(range);
+    setOffset(0);
+  }
+  const filtered =
+    debouncedSearch.length > 0 ||
+    onlyWarnings ||
+    parseStatus !== null ||
+    fieldFilter !== null ||
+    timeRange.some((v) => v !== null);
   const percent =
     progress && progress.totalBytes > 0
       ? Math.min(100, (progress.bytesRead / progress.totalBytes) * 100)
       : 0;
-  const filtered = debouncedSearch.length > 0 || onlyWarnings;
   const rangeStart = page.total === 0 ? 0 : offset + 1;
-  const rangeEnd = Math.min(offset + PAGE_SIZE, page.total);
-
+  const rangeEnd = Math.min(offset + page.rows.length, page.total);
+  const selectedIndex = page.rows.findIndex((row) => row.id === detail?.id);
+  const ThemeIcon =
+    theme === "dark" ? Moon : theme === "system" ? Monitor : Sun;
+  const themeControl = (
+    <label className="theme-control">
+      <ThemeIcon size={15} />
+      <select
+        aria-label="Theme preference"
+        value={theme}
+        onChange={(e) => setTheme(e.target.value as Theme)}
+      >
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="system">System</option>
+      </select>
+    </label>
+  );
+  function navigate(next: View) {
+    setView(next);
+    closeDetails();
+  }
   return (
-    <div className="app-layout">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(event) => event.preventDefault()}
-          aria-label="DFIR Log Explorer"
-        >
-          <span className="brand-mark">
-            <Layers size={23} strokeWidth={1.8} />
-          </span>
-          <span>
-            <strong>DFIR</strong>
-            <small>LOG EXPLORER</small>
-          </span>
-        </a>
-        <div className="workspace-label">
-          WORKSPACE<span className="version-tag">MVP 0</span>
-        </div>
-        <div className="nav-item active">
-          <Activity size={18} />
-          Event explorer
-          <span className="nav-dot" />
-        </div>
-        <div className="sources-heading">
-          <span>SOURCE</span>
-          <button
-            className="sidebar-icon"
-            aria-label="Import another source"
-            disabled={disabled}
-            onClick={() => void beginImport()}
-          >
-            <Plus size={16} />
-          </button>
-        </div>
-        {source ? (
-          <button
-            className={`source-item ${sourceInfo ? "selected" : ""}`}
-            onClick={() => setSourceInfo(!sourceInfo)}
-          >
-            <FileText size={17} />
-            <span>
-              <strong>{source.name}</strong>
-              <small>
-                {formatBytes(source.totalBytes)} ·{" "}
-                {formatNumber(source.totalEvents)} events
-              </small>
-            </span>
-            <span className="source-dot" />
-          </button>
-        ) : (
-          <div className="source-placeholder">
-            <FileText size={17} />
-            <span>No source imported</span>
-          </div>
-        )}
-        <div className="sidebar-bottom">
-          <div className="privacy-card">
-            <span className="privacy-icon">
-              <ShieldCheck size={18} />
-            </span>
-            <div>
-              <strong>Your evidence stays here.</strong>
-              <p>
-                Local processing. No telemetry.
-                <br />
-                No cloud connection.
-              </p>
-            </div>
-          </div>
-          <div className="session-label">
-            <span className="source-dot" />
-            Temporary session
-            <button
-              className="sidebar-icon"
-              aria-label="Session help"
-              onClick={() => setHelp(true)}
-            >
-              <CircleHelp size={15} />
-            </button>
-          </div>
-        </div>
-      </aside>
-
+    <div className={`app-layout ${collapsed ? "sidebar-collapsed" : ""}`}>
+      <Sidebar
+        source={source}
+        view={view}
+        navigate={navigate}
+        disabled={disabled}
+        onImport={() => void beginImport()}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
+        onHelp={() => setHelp(true)}
+      />
       <main className="main-content">
-        <header className="topbar">
-          <div className="breadcrumbs">
-            <FolderOpen size={15} />
-            <span>Workspace</span>
-            <span className="breadcrumb-slash">/</span>
-            <strong>Untitled session</strong>
-          </div>
-          <div className="topbar-actions">
-            <span className="local-badge">
-              <LockKeyhole size={12} />
-              LOCAL ONLY
-            </span>
-            <button
-              className="icon-button"
-              aria-label={
-                dark ? "Switch to light theme" : "Switch to dark theme"
-              }
-              onClick={() => setDark(!dark)}
-            >
-              {dark ? <Sun size={17} /> : <Moon size={17} />}
-            </button>
-            <button
-              className="icon-button"
-              aria-label="Open help"
-              onClick={() => setHelp(true)}
-            >
-              <CircleHelp size={17} />
-            </button>
-          </div>
-        </header>
+        <Topbar
+          source={source}
+          busy={busy}
+          search={search}
+          setSearch={setSearch}
+          searchInput={searchInput}
+          navigate={navigate}
+          themeControl={themeControl}
+        />
         {!bridge.isDesktop && (
           <div className="preview-banner">
-            <FlaskConical size={14} />
+            <FlaskConical size={13} />
             <span>
               Interface preview · synthetic data only. Open the desktop app to
               analyze your files.
             </span>
           </div>
         )}
-        <section className="page-content">
-          <div className="page-heading">
-            <div>
-              <div className="eyebrow">FROM RAW LOGS TO CLEAR SIGNALS</div>
-              <h1>
-                Event explorer<span className="heading-dot">.</span>
-              </h1>
-              <p>Explore your logs. Find the details that matter.</p>
-            </div>
-            <div className="import-actions">
-              <label className="parser-control">
-                <span>Format</span>
-                <select
-                  aria-label="Parser format"
-                  value={mode}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setMode(event.target.value as ParserMode)
-                  }
-                >
-                  <option value="auto">Auto detect</option>
-                  <option value="apache">Apache Common / Combined</option>
-                  <option value="text">Plain text</option>
-                </select>
-              </label>
+        <PageHeading
+          view={view}
+          mode={mode}
+          setMode={setMode}
+          disabled={disabled}
+          picking={picking}
+          beginImport={beginImport}
+        />
+        {error && (
+          <div role="alert" className="message error-message">
+            <AlertTriangle size={16} />
+            <span>{error}</span>
+            <button
+              className="icon-button"
+              aria-label="Dismiss error"
+              onClick={() => setError(null)}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+        {busy && (
+          <div className="import-progress" role="status">
+            <div className="progress-heading">
+              <LoaderCircle size={16} className="spin" />
+              <strong>
+                {cancelling ? "Cancelling import…" : "Importing locally…"}
+              </strong>
+              <span>
+                {importName} · {formatNumber(progress?.linesRead ?? 0)} lines
+                read · {formatBytes(progress?.bytesRead ?? 0)} /{" "}
+                {formatBytes(progress?.totalBytes ?? 0)}
+              </span>
               <button
-                className="primary-button"
-                disabled={disabled}
-                onClick={() => void beginImport()}
+                className="secondary-button"
+                disabled={cancelling}
+                onClick={() => void cancel()}
               >
-                {picking ? (
-                  <LoaderCircle size={17} className="spin" />
-                ) : (
-                  <Plus size={17} />
-                )}
-                Import log file
+                Cancel import
               </button>
+            </div>
+            <div
+              className="progress-track"
+              role="progressbar"
+              aria-label="Import progress"
+              aria-valuenow={Math.round(percent)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div style={{ width: `${percent}%` }} />
             </div>
           </div>
-
-          {error && (
-            <div role="alert" className="message error-message">
-              <AlertTriangle size={17} />
-              <span>{error}</span>
-              <button
-                className="icon-button"
-                aria-label="Dismiss error"
-                onClick={() => setError(null)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
-          {notice && !busy && (
-            <div role="status" className="message notice-message">
-              <Check size={16} />
-              <span>{notice}</span>
-              <button
-                className="icon-button"
-                aria-label="Dismiss notification"
-                onClick={() => setNotice(null)}
-              >
-                <X size={15} />
-              </button>
-            </div>
-          )}
-          {busy && (
-            <div className="import-progress" role="status">
-              <div className="progress-heading">
-                <div>
-                  <LoaderCircle size={17} className="spin" />
-                  <strong>
-                    {cancelling ? "Cancelling import…" : "Importing locally…"}
-                  </strong>
-                  <span>
-                    {formatNumber(progress?.linesRead ?? 0)} events read
-                  </span>
-                </div>
-                <button
-                  className="secondary-button"
-                  disabled={cancelling}
-                  onClick={() => void cancel()}
-                >
-                  Cancel import
-                </button>
-              </div>
-              <div className="progress-track">
-                <div style={{ width: `${percent}%` }} />
-              </div>
-              <div className="progress-caption">
-                <span>
-                  {formatBytes(progress?.bytesRead ?? 0)} /{" "}
-                  {formatBytes(progress?.totalBytes ?? 0)}
-                </span>
-                <span>{Math.round(percent)}%</span>
-              </div>
-            </div>
-          )}
-
-          {source ? (
-            <>
-              <div className="metrics-strip">
-                <div className="metric">
-                  <span className="metric-label">
-                    <Layers size={15} />
-                    TOTAL EVENTS
-                  </span>
-                  <strong>{formatNumber(source.totalEvents)}</strong>
-                  <small>Original order preserved</small>
-                </div>
-                <div className="metric">
-                  <span className="metric-label">
-                    <BracesIcon />
-                    APACHE EVENTS
-                  </span>
-                  <strong>{formatNumber(source.parsedEvents)}</strong>
-                  <small>
-                    {formatNumber(source.textEvents)} plain-text events
-                  </small>
-                </div>
-                <div className="metric">
-                  <span className="metric-label">
-                    <AlertTriangle size={15} />
-                    PARSING WARNINGS
-                  </span>
-                  <strong
-                    className={source.warningEvents ? "metric-warning" : ""}
-                  >
-                    {formatNumber(source.warningEvents)}
-                  </strong>
-                  <small>Raw content preserved</small>
-                </div>
-                <div className="metric">
-                  <span className="metric-label">
-                    <HardDrive size={15} />
-                    SOURCE SIZE
-                  </span>
-                  <strong>{formatBytes(source.totalBytes)}</strong>
-                  <small>
-                    Imported in {(source.elapsedMs / 1000).toFixed(2)} s
-                  </small>
-                </div>
-              </div>
-              <div className="explorer-card">
-                <div className="explorer-toolbar">
-                  <div className="search-box">
-                    <Search size={17} />
-                    <input
-                      ref={searchInput}
-                      aria-label="Search logs"
-                      placeholder="Search any text in your logs…"
-                      value={search}
-                      maxLength={4096}
-                      disabled={busy}
-                      onChange={(event) => setSearch(event.target.value)}
-                    />
-                    {search ? (
-                      <button
-                        className="icon-button"
-                        aria-label="Clear search"
-                        onClick={() => setSearch("")}
-                      >
-                        <X size={15} />
-                      </button>
-                    ) : (
-                      <kbd>Ctrl K</kbd>
-                    )}
-                  </div>
-                  <button
-                    className={`filter-button ${onlyWarnings ? "active" : ""}`}
-                    aria-pressed={onlyWarnings}
-                    disabled={busy}
-                    onClick={() => {
+        )}
+        {view === "Explore" &&
+          (source ? (
+            <div className="explorer-workspace">
+              <div className="explorer-main">
+                <LogSourceHeader
+                  source={source}
+                  onEvidence={() => navigate("Evidence")}
+                />
+                <ParsingSummary
+                  source={source}
+                  disabled={busy}
+                  stats={page.statistics}
+                  available={pageAvailable && !loading && !busy}
+                  pending={loading || busy}
+                  filtered={filtered}
+                  active={parseStatus}
+                  onFilter={statusFilter}
+                />
+                <TimelineChart
+                  stats={page.statistics}
+                  available={pageAvailable && !loading && !busy}
+                  pending={loading || busy}
+                  disabled={busy || loading}
+                  onRange={(from, to) => rangeFilter([from, to])}
+                />
+                <section className="explorer-card">
+                  <LogFilterBar
+                    status={parseStatus}
+                    onStatus={statusFilter}
+                    warnings={onlyWarnings}
+                    onWarnings={() => {
                       setOnlyWarnings(!onlyWarnings);
                       setOffset(0);
                     }}
-                  >
-                    <AlertTriangle size={15} />
-                    Warnings
-                    {source.warningEvents > 0 && (
-                      <span>{source.warningEvents}</span>
-                    )}
-                  </button>
-                </div>
-                <div className="results-heading">
-                  <div>
-                    <span className="live-dot" />
-                    <strong>
-                      {filtered ? "Search results" : "All events"}
-                    </strong>
-                    <span className="count-badge">
-                      {formatNumber(page.total)}
+                    warningCount={source.warningEvents}
+                    scope={scope}
+                    onScope={(v) => {
+                      setScope(v);
+                      setOffset(0);
+                    }}
+                    fieldFilter={fieldFilter}
+                    onFieldFilter={exactFilter}
+                    timeRange={timeRange}
+                    onTimeRange={rangeFilter}
+                    onReset={resetFilters}
+                    filtered={filtered}
+                    disabled={busy}
+                    onError={setError}
+                  />
+                  <EventTable
+                    rows={page.rows}
+                    selectedId={detail?.id ?? null}
+                    onSelect={(row) => void selectEvent(row)}
+                    loading={loading || busy}
+                    filtered={filtered}
+                    sortBy={sortBy}
+                    descending={descending}
+                    onSort={(key) => {
+                      setDescending(sortBy === key ? !descending : false);
+                      setSortBy(key);
+                      setOffset(0);
+                    }}
+                  />
+                  <footer className="table-footer">
+                    <span>
+                      {formatNumber(rangeStart)}–{formatNumber(rangeEnd)} of{" "}
+                      {formatNumber(page.total)} events
                     </span>
-                  </div>
-                  <span>
-                    {loading
-                      ? "Searching…"
-                      : "Click an event to inspect its details"}
-                  </span>
-                </div>
-                <EventTable
-                  rows={page.rows}
-                  selectedId={detail?.id ?? null}
-                  onSelect={(row) => void selectEvent(row)}
-                  loading={loading || busy}
-                  filtered={filtered}
-                />
-                <footer className="table-footer">
-                  <span>
-                    {formatNumber(rangeStart)}–{formatNumber(rangeEnd)} of{" "}
-                    {formatNumber(page.total)} events
-                  </span>
-                  <div>
-                    <span className="query-time">
-                      {bridge.isDesktop
-                        ? `${page.elapsedMs} ms`
-                        : "Synthetic preview"}
-                    </span>
-                    <button
-                      className="icon-button"
-                      aria-label="Previous page"
-                      disabled={offset === 0 || loading || busy}
-                      onClick={() => {
-                        setDetail(null);
-                        setOffset(Math.max(0, offset - PAGE_SIZE));
-                      }}
-                    >
-                      <ChevronLeft size={17} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      aria-label="Next page"
-                      disabled={
-                        offset + PAGE_SIZE >= page.total || loading || busy
-                      }
-                      onClick={() => {
-                        setDetail(null);
-                        setOffset(offset + PAGE_SIZE);
-                      }}
-                    >
-                      <ChevronRight size={17} />
-                    </button>
-                  </div>
-                </footer>
+                    <div>
+                      <span className="query-time">
+                        {detailLoading
+                          ? "Loading event…"
+                          : bridge.isDesktop
+                            ? `${page.elapsedMs} ms`
+                            : "Synthetic preview"}
+                      </span>
+                      <span>Page {Math.floor(offset / PAGE_SIZE) + 1}</span>
+                      <button
+                        className="icon-button"
+                        aria-label="Previous page"
+                        disabled={offset === 0 || loading || busy}
+                        onClick={() =>
+                          setOffset(Math.max(0, offset - PAGE_SIZE))
+                        }
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button
+                        className="icon-button"
+                        aria-label="Next page"
+                        disabled={
+                          offset + PAGE_SIZE >= page.total || loading || busy
+                        }
+                        onClick={() => setOffset(offset + PAGE_SIZE)}
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </footer>
+                </section>
               </div>
-            </>
+              {detail && (
+                <DetailPanel
+                  detail={detail}
+                  source={source}
+                  onClose={closeDetails}
+                  onFilter={exactFilter}
+                  onParsingFilter={statusFilter}
+                  onNavigate={(direction) => {
+                    const row = page.rows[selectedIndex + direction];
+                    if (row) void selectEvent(row);
+                  }}
+                  hasPrevious={selectedIndex > 0}
+                  hasNext={
+                    selectedIndex >= 0 && selectedIndex < page.rows.length - 1
+                  }
+                  disabled={busy || loading || detailLoading}
+                />
+              )}
+            </div>
           ) : (
             !busy && (
               <div className="empty-state">
-                <div className="empty-illustration">
-                  <div className="orbit orbit-one" />
-                  <div className="orbit orbit-two" />
-                  <div className="file-illustration">
-                    <FileText size={36} strokeWidth={1.3} />
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                  <span className="illustration-lock">
-                    <LockKeyhole size={17} />
-                  </span>
-                  <span className="illustration-search">
-                    <Search size={20} />
-                  </span>
+                <div className="empty-icon">
+                  <FileText size={32} strokeWidth={1.4} />
                 </div>
-                <span className="eyebrow">
-                  YOUR NEXT INVESTIGATION STARTS HERE
-                </span>
-                <h2>Every log tells a story.</h2>
+                <span className="eyebrow">START WITH YOUR SOURCE</span>
+                <h2>A clearer view of your logs.</h2>
                 <p>
-                  Import a log file to explore its events, search the raw text,
+                  Import, parse, and explore every line.
                   <br />
-                  and inspect the evidence — all on your machine.
+                  Keep the original evidence within reach.
                 </p>
                 <button
                   className="primary-button"
                   disabled={disabled}
                   onClick={() => void beginImport()}
                 >
-                  <ArrowDownToLine size={17} />
+                  <FolderOpen size={16} />
                   Choose a log file
-                  <ArrowRight size={16} />
+                  <ArrowRight size={15} />
                 </button>
                 <button
                   className="sample-button"
@@ -647,141 +586,70 @@ export function App({ bridge }: { bridge: Bridge }) {
                   <ArrowRight size={14} />
                 </button>
                 <div className="supported-formats">
-                  <span>Apache Common & Combined</span>
-                  <span className="separator-dot" />
-                  <span>Plain text</span>
-                  <span className="separator-dot" />
-                  <span>UTF-8</span>
+                  Apache Common & Combined <span>·</span> Plain text{" "}
+                  <span>·</span> UTF-8
+                </div>
+                <div className="empty-workflow">
+                  <span>
+                    <i>01</i>Import a source
+                  </span>
+                  <span>
+                    <i>02</i>Review parsing
+                  </span>
+                  <span>
+                    <i>03</i>Inspect events
+                  </span>
                 </div>
               </div>
             )
-          )}
-          <footer className="workspace-footer">
-            <span>
-              <LockKeyhole size={12} />
-              Your files never leave this device.
+          ))}
+        {view === "Evidence" && (
+          <EvidenceView source={source} onExplore={() => navigate("Explore")} />
+        )}
+        {view === "Parsers" && (
+          <ParsersView
+            mode={mode}
+            disabled={disabled}
+            onSelect={(mode) => {
+              setMode(mode);
+              navigate("Explore");
+            }}
+          />
+        )}
+        {view === "Settings" && (
+          <SettingsView
+            themeControl={themeControl}
+            collapsed={collapsed}
+            onToggle={() => setCollapsed(!collapsed)}
+            onHelp={() => setHelp(true)}
+          />
+        )}
+        <footer className="workspace-footer">
+          <span>
+            <span className="live-dot" />
+            Temporary session <span className="footer-separator">/</span>
+            <LockKeyhole size={11} />
+            Local processing
+          </span>
+          {notice && !busy ? (
+            <span role="status" className="footer-notice">
+              {notice}
+              <button
+                className="icon-button"
+                aria-label="Dismiss notification"
+                onClick={() => setNotice(null)}
+              >
+                <X size={12} />
+              </button>
             </span>
+          ) : (
             <span>
               DFIR Log Explorer <span className="footer-version">v0.1.0</span>
             </span>
-          </footer>
-        </section>
+          )}
+        </footer>
       </main>
-      {detail && (
-        <DetailPanel
-          detail={detail}
-          onClose={() => {
-            detailRequest.current++;
-            setDetail(null);
-          }}
-        />
-      )}
-      {((sourceInfo && source) || help) && (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            setSourceInfo(false);
-            setHelp(false);
-          }}
-        >
-          <section
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={help ? "Application help" : "Source information"}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-heading">
-              <h2>
-                {help
-                  ? "A private workspace for your logs"
-                  : "Source information"}
-              </h2>
-              <button
-                className="icon-button"
-                autoFocus
-                aria-label="Close dialog"
-                onClick={() => {
-                  setSourceInfo(false);
-                  setHelp(false);
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            {help ? (
-              <>
-                <p>
-                  Choose a local file and its format. Auto detect recognizes
-                  Apache Common and Combined events; other lines remain
-                  searchable as plain text.
-                </p>
-                <p>
-                  This version uses a temporary session. Importing another file
-                  replaces the current dataset after a successful import.
-                  Cancelling keeps the previous dataset.
-                </p>
-                <p>
-                  Session data is removed on normal application exit. A forced
-                  termination can leave temporary files on disk. Use an
-                  encrypted local drive for sensitive evidence.
-                </p>
-                <div className="shortcut-list">
-                  <span>
-                    <kbd>Ctrl O</kbd> Import a file
-                  </span>
-                  <span>
-                    <kbd>Ctrl K</kbd> Focus search
-                  </span>
-                  <span>
-                    <kbd>Esc</kbd> Close details
-                  </span>
-                </div>
-              </>
-            ) : (
-              source && (
-                <>
-                  <p className="source-modal-name">
-                    <FileText size={18} />
-                    {source.name}
-                  </p>
-                  <dl className="field-list">
-                    <div>
-                      <dt>Source size</dt>
-                      <dd>{formatBytes(source.totalBytes)}</dd>
-                    </div>
-                    <div>
-                      <dt>Events</dt>
-                      <dd>{formatNumber(source.totalEvents)}</dd>
-                    </div>
-                    <div>
-                      <dt>Warnings</dt>
-                      <dd>{formatNumber(source.warningEvents)}</dd>
-                    </div>
-                  </dl>
-                  <h3>
-                    <Fingerprint size={16} />
-                    SHA-256 / imported source bytes
-                  </h3>
-                  <pre className="raw-event hash">{source.sha256}</pre>
-                  <p className="muted">
-                    Raw bytes and source offsets are retained. Source files are
-                    opened read-only.
-                  </p>
-                </>
-              )
-            )}
-          </section>
-        </div>
-      )}
+      {help && <HelpDialog onClose={() => setHelp(false)} />}
     </div>
-  );
-}
-
-function BracesIcon() {
-  return (
-    <span className="braces-icon" aria-hidden="true">
-      {"{ }"}
-    </span>
   );
 }

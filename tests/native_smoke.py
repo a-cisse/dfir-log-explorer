@@ -83,12 +83,31 @@ def main():
         })
         assert search_result["total"] == 2
         assert search_result["rows"][0]["sourceIp"] == "198.51.100.24"
+        def query(criteria):
+            payload = {"search": "", "onlyWarnings": False, "offset": 0, "limit": 500, **criteria}
+            return command("POST", root + "/execute/async", {
+                "script": "const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke('query_events', {query: " + json.dumps(payload) + "}).then(done).catch(e => done({error: String(e)}));",
+                "args": [],
+            })
+
+        partial = query({"parseStatus": "partial"})
+        assert partial["total"] == 1
+        assert partial["rows"][0]["parseStatus"] == "partial"
+        assert partial["rows"][0]["sourceIp"] == "192.0.2.14"
+        assert partial["rows"][0]["timestamp"] is None
+        assert partial["statistics"]["missingTimestamp"] == 1
+        unknown = query({"parseStatus": "unparsed", "searchField": "raw", "search": "<img src="})
+        assert unknown["total"] == 1
+        assert unknown["rows"][0]["lineNumber"] == 11
+        sorted_events = query({"sortBy": "status", "descending": True, "limit": 1})
+        assert sorted_events["rows"][0]["status"] == 502
+        assert sorted_events["statistics"]["responses"] == [7, 0, 4, 1]
         click("[aria-label='Close event details']")
         click(".filter-button")
         wait_for(lambda: script("return document.querySelector('.table-footer')?.textContent.includes('1–13 of 13 events')"))
         screenshot = command("GET", root + "/screenshot")
         pathlib.Path("/tmp/dfir-mvp0-native.png").write_bytes(base64.b64decode(screenshot))
-        print("Native smoke passed: real import, query, detail, warning filter, and local desktop bridge.")
+        print("Native smoke passed: real import, query, detail, parsing states, global statistics/sorting, warning filter, and local desktop bridge.")
     finally:
         command("DELETE", root)
 

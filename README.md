@@ -8,13 +8,14 @@ A private desktop workspace for exploring logs on Windows and Linux. Source file
 
 - Import one uncompressed text log into a temporary analysis session.
 - Recognize Apache Common and Combined events automatically, or explicitly choose Apache or plain text.
-- Search the complete raw display text using a case-insensitive, literal substring.
-- Browse results in original file order, in pages of at most 500 events with virtualized rendering.
+- Search raw logs and extracted fields with a case-insensitive literal substring; combine parsing, warning, exact-field and explicit UTC time filters.
+- Browse original source order or sort across the complete dataset, in virtualized pages of at most 500 events. Configure the visible columns.
 - Inspect extracted HTTP fields, source line numbers, byte offsets, and raw events.
-- Identify parsing warnings without losing the affected events.
+- Distinguish Parsed, Partial and Unparsed events without losing any source lines or recoverable fields. Count warnings independently.
+- Review real parsing/HTTP statistics and a compact interactive timeline. Events without valid timestamps remain outside the timeline.
 - Monitor and cancel imports. Cancelled or failed imports preserve the previous dataset.
 - Inspect the imported source's SHA-256 fingerprint.
-- Switch between light and dark themes and use keyboard shortcuts.
+- Use Light (default), Dark or System themes, persistent display preferences, compact navigation and keyboard shortcuts.
 
 ## Download and test
 
@@ -94,9 +95,11 @@ cargo run -p dfir-log-core --example export_demo --locked > src/demo-data.json
 - Lines exceeding 1 MiB cause an explicit error and full rollback. They are never silently truncated.
 - Common/Combined means the standard Apache layouts, not every configurable Apache `LogFormat`.
 - DuckDB's 512 MB buffer-memory budget is **not** a process-wide RAM limit. Source bytes and decoded text are both stored, so sufficient local temporary disk space is required.
-- Search currently scans text; large-volume full-text indexing and time sorting are future steps. Unfiltered pages use ID boundaries; deep filtered offsets can still become slower.
+- Search scans text and sorting operates in DuckDB; full-text indexing is a future step. Unfiltered pages use ID boundaries; deep filtered offsets can still become slower.
 - List fields are bounded previews, including extracted URLs and agents. Selecting an event returns its complete extracted fields and raw text.
 - Only one import runs at a time. Queries and details are unavailable during import.
+
+See the [UI/UX audit](docs/ui-ux-audit.md) and [redesign delivery report](docs/ui-ux-redesign.md) for the interface changes and validation.
 
 See [architecture](docs/architecture.md), [privacy](docs/privacy.md), [performance](docs/performance.md), and [the MVP roadmap](docs/roadmap.md).
 

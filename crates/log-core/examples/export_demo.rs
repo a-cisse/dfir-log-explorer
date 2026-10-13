@@ -8,6 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut summary = engine.import(&path, ParserMode::Auto, &AtomicBool::new(false), |_| {})?;
     summary.name = "apache-mixed.log (synthetic sample)".into();
     summary.elapsed_ms = 0;
+    summary.provenance = "Bundled synthetic fixture".into();
     let page = engine.query(&Query {
         limit: PAGE_SIZE,
         ..Default::default()

@@ -12,10 +12,30 @@ pub enum ParserMode {
     Text,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ParseStatus {
+    Parsed,
+    Partial,
+    #[default]
+    Unparsed,
+}
+
+impl ParseStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Parsed => "parsed",
+            Self::Partial => "partial",
+            Self::Unparsed => "unparsed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParsedFields {
     pub parser: String,
+    pub parse_status: ParseStatus,
     pub timestamp: Option<String>,
     pub timestamp_ms: Option<i64>,
     pub source_ip: Option<String>,
@@ -43,6 +63,7 @@ pub fn parse_line(line: &str, mode: ParserMode) -> ParsedFields {
         ..Default::default()
     };
     if mode == ParserMode::Text {
+        fields.parse_status = ParseStatus::Parsed;
         return fields;
     }
     let Some(captures) = apache_pattern().captures(line) else {
@@ -53,60 +74,49 @@ pub fn parse_line(line: &str, mode: ParserMode) -> ParsedFields {
         }
         return fields;
     };
-    let result = (|| {
-        let timestamp = DateTime::parse_from_str(&captures["time"], "%d/%b/%Y:%H:%M:%S %z")
-            .map_err(|_| "Invalid Apache timestamp or timezone.")?;
-        let status = captures["status"]
-            .parse::<i32>()
-            .map_err(|_| "Invalid HTTP status.")?;
-        if !(100..=599).contains(&status) {
-            return Err("HTTP status must be between 100 and 599.");
+    // Validate independently so a bad required field cannot erase valid evidence.
+    fields.parser = "apache".into();
+    fields.source_ip = Some(captures["host"].into());
+    fields.referrer = captures.name("referrer").map(|v| v.as_str().into());
+    fields.user_agent = captures.name("agent").map(|v| v.as_str().into());
+    let mut errors = Vec::new();
+    match DateTime::parse_from_str(&captures["time"], "%d/%b/%Y:%H:%M:%S %z") {
+        Ok(timestamp) => {
+            fields.timestamp = Some(timestamp.to_rfc3339());
+            fields.timestamp_ms = Some(timestamp.timestamp_millis());
         }
-        let response_bytes = match &captures["bytes"] {
-            "-" => None,
-            value => Some(
-                value
-                    .parse::<i64>()
-                    .map_err(|_| "Response byte count is too large.")?,
-            ),
-        };
-        let request = &captures["request"];
-        let (method, path, protocol) = if request == "-" {
-            (None, None, None)
-        } else {
-            let parts: Vec<_> = request.split_whitespace().collect();
-            if parts.len() != 3 || !parts[2].starts_with("HTTP/") {
-                return Err("Invalid Apache HTTP request field.");
-            }
-            (
-                Some(parts[0].into()),
-                Some(parts[1].into()),
-                Some(parts[2].into()),
-            )
-        };
-        Ok(ParsedFields {
-            parser: "apache".into(),
-            timestamp: Some(timestamp.to_rfc3339()),
-            timestamp_ms: Some(timestamp.timestamp_millis()),
-            source_ip: Some(captures["host"].into()),
-            method,
-            path,
-            protocol,
-            status: Some(status),
-            response_bytes,
-            referrer: captures.name("referrer").map(|value| value.as_str().into()),
-            user_agent: captures.name("agent").map(|value| value.as_str().into()),
-            parse_error: None,
-        })
-    })();
-    match result {
-        Ok(parsed) => parsed,
-        Err(error) => ParsedFields {
-            parser: "unparsed".into(),
-            parse_error: Some(error.into()),
-            ..Default::default()
-        },
+        Err(_) => errors.push("Invalid Apache timestamp or timezone."),
     }
+    match captures["status"].parse::<i32>() {
+        Ok(status) if (100..=599).contains(&status) => fields.status = Some(status),
+        _ => errors.push("HTTP status must be between 100 and 599."),
+    }
+    if &captures["bytes"] != "-" {
+        match captures["bytes"].parse::<i64>() {
+            Ok(bytes) => fields.response_bytes = Some(bytes),
+            Err(_) => errors.push("Response byte count is too large."),
+        }
+    }
+    let request = &captures["request"];
+    if request != "-" {
+        let parts: Vec<_> = request.split_whitespace().collect();
+        if parts.len() == 3 && parts[2].starts_with("HTTP/") {
+            fields.method = Some(parts[0].into());
+            fields.path = Some(parts[1].into());
+            fields.protocol = Some(parts[2].into());
+        } else {
+            errors.push("Invalid Apache HTTP request field.");
+        }
+    }
+    fields.parse_status = if errors.is_empty() {
+        ParseStatus::Parsed
+    } else {
+        ParseStatus::Partial
+    };
+    if !errors.is_empty() {
+        fields.parse_error = Some(errors.join(" "));
+    }
+    fields
 }
 
 #[cfg(test)]
@@ -161,6 +171,50 @@ mod tests {
             parse_line(&COMMON.replace("200 2326", "999 2326"), ParserMode::Auto)
                 .parse_error
                 .is_some()
+        );
+    }
+    #[test]
+    fn partial_retains_valid_fields_and_optional_absences_are_not_failures() {
+        let bad = COMMON
+            .replace("10/Oct/2000:13:55:36 -0700", "invalid date")
+            .replace("200 2326", "999 2326");
+        let fields = parse_line(&bad, ParserMode::Apache);
+        assert_eq!(fields.parse_status, ParseStatus::Partial);
+        assert_eq!(fields.source_ip.as_deref(), Some("192.0.2.10"));
+        assert_eq!(fields.path.as_deref(), Some("/index.html"));
+        assert_eq!(fields.response_bytes, Some(2326));
+        assert_eq!(fields.timestamp, None);
+        assert_eq!(fields.status, None);
+        assert!(fields.parse_error.unwrap().contains("HTTP status"));
+        let optional = parse_line(
+            &COMMON
+                .replace("GET /index.html HTTP/1.1", "-")
+                .replace("2326", "-"),
+            ParserMode::Apache,
+        );
+        assert_eq!(optional.parse_status, ParseStatus::Parsed);
+        assert!(optional.parse_error.is_none());
+        assert_eq!(optional.method, None);
+        assert_eq!(optional.response_bytes, None);
+        assert_eq!(optional.referrer, None);
+        let malformed = parse_line(
+            &COMMON.replace("GET /index.html HTTP/1.1", "GET /index.html"),
+            ParserMode::Apache,
+        );
+        assert_eq!(malformed.parse_status, ParseStatus::Partial);
+        assert_eq!(malformed.timestamp_ms, Some(971211336000));
+        assert_eq!(malformed.method, None);
+        assert_eq!(
+            parse_line(&COMMON[..COMMON.len() / 2], ParserMode::Apache).parse_status,
+            ParseStatus::Unparsed
+        );
+        assert_eq!(
+            parse_line("unexpected format", ParserMode::Auto).parse_status,
+            ParseStatus::Unparsed
+        );
+        assert_eq!(
+            parse_line("raw text", ParserMode::Text).parse_status,
+            ParseStatus::Parsed
         );
     }
 }
