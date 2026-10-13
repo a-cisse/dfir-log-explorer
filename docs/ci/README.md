@@ -6,7 +6,7 @@ The interface job checks TypeScript, the production asset bundle, formatting, pr
 
 The workflow uses synthetic data only and retains platform build artifacts for 14 days. No credentials or private evidence are required or published. Build infrastructure can download public dependencies; application runtime and log processing remain local.
 
-Rust dependency artifacts are cached per platform/toolchain to avoid recompiling the embedded C++ engine during subsequent MVP changes. Workspace sources are rebuilt and checked after changes.
+Rust dependency artifacts are cached after a successful job, per platform/toolchain to avoid recompiling the embedded C++ engine during subsequent MVP changes. Workspace sources are rebuilt and checked after changes.
 
 Open a successful workflow run and download `dfir-log-explorer-linux` or `dfir-log-explorer-windows` from its artifacts section. Extract the archive and follow the acceptance guide. Platform build success does not substitute for interactive Windows/Linux testing or an offline runtime audit.
 

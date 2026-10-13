@@ -58,8 +58,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: mvp-0-release-v1
           shared-key: mvp-0-${{ matrix.target }}
-          cache-on-failure: true
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
         run: |
