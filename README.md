@@ -94,7 +94,8 @@ cargo run -p dfir-log-core --example export_demo --locked > src/demo-data.json
 - Lines exceeding 1 MiB cause an explicit error and full rollback. They are never silently truncated.
 - Common/Combined means the standard Apache layouts, not every configurable Apache `LogFormat`.
 - DuckDB's 512 MB buffer-memory budget is **not** a process-wide RAM limit. Source bytes and decoded text are both stored, so sufficient local temporary disk space is required.
-- Search currently scans text; large-volume full-text indexing and time sorting are future steps.
+- Search currently scans text; large-volume full-text indexing and time sorting are future steps. Unfiltered pages use ID boundaries; deep filtered offsets can still become slower.
+- List fields are bounded previews, including extracted URLs and agents. Selecting an event returns its complete extracted fields and raw text.
 - Only one import runs at a time. Queries and details are unavailable during import.
 
 See [architecture](docs/architecture.md), [privacy](docs/privacy.md), [performance](docs/performance.md), and [the MVP roadmap](docs/roadmap.md).

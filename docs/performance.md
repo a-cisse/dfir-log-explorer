@@ -27,6 +27,6 @@ The JSON output records profile, source bytes, import seconds, events/second, Mi
 
 ## Initial limitations
 
-Each search/count currently scans decoded text, and deep offset pagination is not guaranteed to be constant-time. Imports are atomic and block exploration until completion. The database buffer budget is 512 MB with two threads, while total process memory can exceed that budget. Profiling, keyset navigation, indexes, and incremental imports will be considered against observed bottlenecks.
+Filtered searches/counts currently scan decoded text, and deep filtered offset pagination is not guaranteed to be constant-time. Unfiltered pages use contiguous event-ID boundaries to avoid skipping earlier results. Imports are atomic and block exploration until completion. The database buffer budget is 512 MB with two threads, while total process memory can exceed that budget. Filtered cursor navigation, indexes, and incremental imports will be considered against observed bottlenecks.
 
 Actual local verification measurements are recorded in `docs/validation.md` when available; they are not universal performance guarantees.

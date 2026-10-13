@@ -15,6 +15,13 @@ use thiserror::Error;
 pub const MAX_LINE_BYTES: usize = 1024 * 1024;
 pub const PAGE_SIZE: u32 = 500;
 
+// List responses are previews, including extracted strings. The full fields
+// are returned only by detail(), so a long URL/agent cannot inflate a page IPC.
+const LIST_COLUMNS: &str = "id, line_number, byte_offset, substring(message, 1, 240), parser,
+    timestamp, timestamp_ms, substring(source_ip, 1, 160), substring(method, 1, 32),
+    substring(path, 1, 240), substring(protocol, 1, 32), status, response_bytes,
+    substring(referrer, 1, 240), substring(user_agent, 1, 240), substring(parse_error, 1, 512)";
+
 #[derive(Debug, Error)]
 pub enum EngineError {
     #[error("Unable to read the selected file or local session storage.")]
@@ -294,28 +301,41 @@ impl Engine {
             return Err(EngineError::InvalidQuery);
         }
         let started = Instant::now();
-        let total: i64 = self.connection.query_row(
-            "SELECT count(*) FROM events WHERE contains(lower(message), lower(?)) AND (NOT ? OR parse_error IS NOT NULL)",
-            params![query.search, query.only_warnings], |row| row.get(0),
-        )?;
-        let mut statement = self.connection.prepare(
-            "SELECT id, line_number, byte_offset, substring(message, 1, 240), parser,
-                    timestamp, timestamp_ms, source_ip, method, path, protocol, status,
-                    response_bytes, referrer, user_agent, parse_error
-             FROM events WHERE contains(lower(message), lower(?)) AND (NOT ? OR parse_error IS NOT NULL)
-             ORDER BY id LIMIT ? OFFSET ?",
-        )?;
-        let rows = statement
-            .query_map(
-                params![
-                    query.search,
-                    query.only_warnings,
-                    query.limit,
-                    query.offset as i64
-                ],
-                event_row,
-            )?
-            .collect::<Result<Vec<_>, _>>()?;
+        let (total, rows) = if query.search.is_empty() && !query.only_warnings {
+            let total: i64 =
+                self.connection
+                    .query_row("SELECT count(*) FROM events", [], |row| row.get(0))?;
+            // Every source line is retained, including blank and malformed
+            // lines, so IDs are contiguous. Unfiltered offsets map directly to
+            // an ID boundary and avoid sorting/skipping all preceding events.
+            let mut statement = self.connection.prepare(&format!(
+                "SELECT {LIST_COLUMNS} FROM events WHERE id > ? ORDER BY id LIMIT ?"
+            ))?;
+            let rows = statement
+                .query_map(params![query.offset as i64, query.limit], event_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+            (total, rows)
+        } else {
+            let total: i64 = self.connection.query_row(
+                "SELECT count(*) FROM events WHERE contains(lower(message), lower(?)) AND (NOT ? OR parse_error IS NOT NULL)",
+                params![query.search, query.only_warnings], |row| row.get(0),
+            )?;
+            let mut statement = self.connection.prepare(&format!(
+                "SELECT {LIST_COLUMNS} FROM events WHERE contains(lower(message), lower(?)) AND (NOT ? OR parse_error IS NOT NULL) ORDER BY id LIMIT ? OFFSET ?"
+            ))?;
+            let rows = statement
+                .query_map(
+                    params![
+                        query.search,
+                        query.only_warnings,
+                        query.limit,
+                        query.offset as i64
+                    ],
+                    event_row,
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            (total, rows)
+        };
         Ok(QueryPage {
             rows,
             total: total as u64,

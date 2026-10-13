@@ -234,6 +234,41 @@ fn empty_file_and_literal_search_work() {
 }
 
 #[test]
+fn long_extracted_fields_cannot_inflate_pages_and_detail_remains_complete() {
+    let path = format!("/{}", "a".repeat(32768));
+    let agent = "b".repeat(32768);
+    let line = format!("192.0.2.10 - - [13/Oct/2026:09:14:00 +0000] \"GET {path} HTTP/1.1\" 200 42 \"-\" \"{agent}\"\n");
+    let file = source(line.repeat(20).as_bytes());
+    let mut engine = Engine::new().unwrap();
+    engine
+        .import(
+            file.path(),
+            ParserMode::Auto,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+    let page = engine.query(&query("")).unwrap();
+    assert_eq!(page.total, 20);
+    assert!(serde_json::to_vec(&page).unwrap().len() < 1_000_000);
+    let detail = engine.detail(1).unwrap();
+    assert_eq!(detail.event.fields.path.as_deref(), Some(path.as_str()));
+    assert_eq!(
+        detail.event.fields.user_agent.as_deref(),
+        Some(agent.as_str())
+    );
+    assert!(detail.raw.contains(&path));
+    let beyond_end = engine
+        .query(&Query {
+            offset: 21,
+            ..query("")
+        })
+        .unwrap();
+    assert_eq!(beyond_end.total, 20);
+    assert!(beyond_end.rows.is_empty());
+}
+
+#[test]
 fn rejects_compressed_binary_and_utf16_sources_without_replacing_data() {
     let mut engine = Engine::new().unwrap();
     let old = source(b"keep this event\n");

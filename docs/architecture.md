@@ -41,9 +41,9 @@ The MVP 0 timestamp representation preserves the source offset and a numeric ins
 
 ## Query and UI boundaries
 
-Queries use bound parameters. User text is a literal substring, not SQL or a regular expression. Result pages are limited to 500 events, and list previews are limited to 240 characters. Full display text is returned only for the selected event. The table virtualizes the page; it does not accumulate the whole dataset in browser memory.
+Queries use bound parameters. User text is a literal substring, not SQL or a regular expression. Result pages are limited to 500 events. Raw list previews, URLs, referrers, and agents are limited to 240 characters, with smaller bounds for other extracted list strings. Full display text and complete extracted fields are returned only for the selected event. This prevents unusually long HTTP fields from inflating an entire IPC page. The table virtualizes the page; it does not accumulate the whole dataset in browser memory.
 
-Pages are ordered by event ID. Count and search currently scan the dataset; offset pagination may become slower at large offsets. Future optimization must be driven by measured workloads, including keyset navigation and a dedicated text index if needed.
+Pages are ordered by event ID. In an unfiltered session, IDs are contiguous because all source lines are retained, so an offset maps directly to an ID boundary. Those pages use `id > boundary` instead of sorting/skipping earlier events; the total uses a simple table count. Filtered searches/counts scan text, and deep filtered offset pagination may become slower. Further optimization must be driven by measured workloads, including filtered cursor navigation and a dedicated text index if needed.
 
 Source import and query response types are serialized with camelCase keys. The generated synthetic preview fixture exercises the same serialization as production.
 
