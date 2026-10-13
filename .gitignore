@@ -16,6 +16,8 @@ dist/
 coverage/
 playwright-report/
 test-results/
+__pycache__/
+*.pyc
 src-tauri/gen/
 *.tsbuildinfo
 

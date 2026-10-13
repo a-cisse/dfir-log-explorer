@@ -53,7 +53,7 @@ Each engine creates a unique temporary directory and disk-backed database. DuckD
 
 The production CSP permits only local application assets and Tauri IPC. Log content is rendered through React text nodes; it cannot inject HTML or execute scripts. Development HMR uses localhost only and has a separate CSP.
 
-Temporary storage is removed on normal teardown. Crash leftovers are possible; there is no secure erasure or application-level encryption in MVP 0. See the privacy document.
+Temporary storage is explicitly dropped in Tauri's exit callback, because the framework can terminate without normal stack unwinding. The callback signals import cancellation before closing the database. Crash leftovers are possible; there is no secure erasure or application-level encryption in MVP 0. See the privacy document.
 
 ## Distribution
 

@@ -9,11 +9,11 @@ use std::{
         Arc, Mutex,
     },
 };
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 struct AppState {
-    engine: Arc<Mutex<Engine>>,
+    engine: Arc<Mutex<Option<Engine>>>,
     selected: Arc<Mutex<Option<PathBuf>>>,
     cancelled: Arc<AtomicBool>,
     busy: Arc<AtomicBool>,
@@ -121,6 +121,8 @@ async fn start_import(
         let result = engine
             .lock()
             .map_err(|_| lock_error())?
+            .as_mut()
+            .ok_or_else(lock_error)?
             .import(&source_path, mode, &cancelled, |progress| {
                 if on_progress.send(progress).is_err() {
                     cancelled.store(true, Ordering::Relaxed);
@@ -154,6 +156,8 @@ async fn query_events(query: Query, state: State<'_, AppState>) -> Result<QueryP
         engine
             .lock()
             .map_err(|_| lock_error())?
+            .as_ref()
+            .ok_or_else(lock_error)?
             .query(&query)
             .map_err(|error| error.to_string())
     })
@@ -171,6 +175,8 @@ async fn event_detail(id: u64, state: State<'_, AppState>) -> Result<EventDetail
         engine
             .lock()
             .map_err(|_| lock_error())?
+            .as_ref()
+            .ok_or_else(lock_error)?
             .detail(id)
             .map_err(|error| error.to_string())
     })
@@ -189,7 +195,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            engine: Arc::new(Mutex::new(engine)),
+            engine: Arc::new(Mutex::new(Some(engine))),
             selected: Arc::new(Mutex::new(None)),
             cancelled: Arc::new(AtomicBool::new(false)),
             busy: Arc::new(AtomicBool::new(false)),
@@ -202,6 +208,18 @@ pub fn run() {
             query_events,
             event_detail
         ])
-        .run(tauri::generate_context!())
-        .expect("Unable to start the desktop application");
+        .build(tauri::generate_context!())
+        .expect("Unable to start the desktop application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                let state = app.state::<AppState>();
+                state.cancelled.store(true, Ordering::Relaxed);
+                // Tauri exits the process without normal stack unwinding. Take
+                // and drop the engine here so its private temporary directory
+                // is removed on normal exit, including after a cancelled import.
+                if let Ok(mut session) = state.engine.lock() {
+                    session.take();
+                };
+            }
+        });
 }
