@@ -16,3 +16,9 @@ Open a successful workflow run and download `dfir-log-explorer-linux` or `dfir-l
 Staging fails on missing/unexpected files or nested directories. Prefer installing the Linux `.deb`; GitHub artifact ZIPs do not retain executable permissions for the standalone Linux binary. Platform build success does not substitute for interactive Windows/Linux testing or an offline runtime audit.
 
 See [MVP 1 validation](../mvp-1-validation.md) for current checks and [MVP 0 validation](../validation.md) for the original measurements. Local Linux packages use the debug profile for native acceptance checks; workflow installers use the release profile.
+
+## Windows user installation
+
+NSIS explicitly uses `currentUser`, with an `asInvoker` installer manifest. A fresh installation proposes `%LOCALAPPDATA%\Programs\DFIR Log Explorer`; shortcuts and uninstall registration belong to that user. Existing install locations and explicit `/D=` destinations are retained. A small hook adjusts only the fresh-install default in interactive and silent mode; the upstream Tauri template remains in use.
+
+The Windows build executes `tests/windows_install.ps1` against the actual installer: manifest, default location, explicit destination, reinstall, current-user Start menu shortcut/registry and uninstall. CI uses its existing runner account; an interactive test with a standard Windows account is still required. If WebView2 is missing, the embedded offline runtime installer is used.

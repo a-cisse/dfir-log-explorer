@@ -23,6 +23,9 @@
     "shortDescription": "Local log analysis for investigations",
     "category": "DeveloperTool",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
-    "windows": { "webviewInstallMode": { "type": "offlineInstaller" } }
+    "windows": {
+      "nsis": { "installMode": "currentUser", "installerHooks": "user-install.nsh" },
+      "webviewInstallMode": { "type": "offlineInstaller" }
+    }
   }
 }

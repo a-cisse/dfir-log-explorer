@@ -72,6 +72,10 @@ jobs:
       - run: cargo test --workspace --release --locked --target ${{ matrix.target }}
       - run: cargo clippy --workspace --all-targets --release --locked --target ${{ matrix.target }} -- -D warnings
       - run: npm run desktop:build -- --bundles ${{ matrix.bundles }} --target ${{ matrix.target }}
+      - name: Verify Windows user installation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/windows_install.ps1 -Installer "target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe"
       - name: Stage flat download files
         shell: pwsh
         run: |

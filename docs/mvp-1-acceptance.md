@@ -5,7 +5,7 @@ MVP 0 was explicitly accepted on 2026-10-13. MVP 1 is version 0.2.1. Test the de
 ## Minimal workspace and downloads
 
 1. Extract the platform ZIP: the `.deb` and executable (Linux), or setup executable (Windows), must appear directly at its root. No `bundle`, `deb` or `nsis` directory needs opening.
-2. Install the package and check the blue layered-log icon in the launcher/desktop shortcut matches the application sidebar.
+2. On Windows, launch the setup from a standard account without choosing **Run as administrator**. A fresh installation should propose `%LOCALAPPDATA%\Programs\DFIR Log Explorer`, create user shortcuts and appear in installed applications without requesting elevation. Check launch and uninstall from that same account; repeat with WebView2 initially absent if possible. Reinstallation retains the existing directory. Install the package and check the blue layered-log icon in the launcher/desktop shortcut matches the application sidebar.
 3. Choose a reader in the header and import a source. Logs should appear near the top, without statistics cards or a timeline above them. At 1000 × 650, the table should remain usable without scrolling the whole page.
 4. Verify raw content is visible by default. Add HTTP columns and inspect JSON fields through the event inspector as needed. Multiple-source cases must identify each row's source.
 5. Open **Filters**, apply a reader or timestamp filter, then close the panel. Its active chip must stay visible; **Reset** must restore all events.
