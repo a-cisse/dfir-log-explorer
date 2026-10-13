@@ -92,11 +92,11 @@ These captures show the current MVP 1 v0.2.1 review build with synthetic evidenc
 
 Compact event exploration with raw content visible:
 
-![MVP 1 compact log table with source and parsing filters](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/images/mvp-1-minimal-light.png)
+![MVP 1 compact log table with source and parsing filters](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/images/mvp-1-minimal-light.png)
 
 Inspecting a partially parsed event alongside the logs:
 
-![MVP 1 inspector showing the original log line and invalid timestamp diagnostic](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/images/mvp-1-minimal-inspector.png)
+![MVP 1 inspector showing the original log line and invalid timestamp diagnostic](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/images/mvp-1-minimal-inspector.png)
 
 See the [minimal workspace report][mvp1-workspace] for layout checks and Dark mode. The [MVP 0 redesign report](docs/ui-ux-redesign.md) retains the earlier interface captures.
 
@@ -135,7 +135,7 @@ cd dfir-log-explorer
 A fresh clone checks out `main` (MVP 0). To reproduce the verified MVP 1 review implementation, switch to its revision before installing dependencies:
 
 ```sh
-git switch --detach c6689d8d8d58c7fd5401844f8ccae011cb162b4d
+git switch --detach 9684e828fbc9c84ff87a95d7504cb6f81aa934bc
 ```
 
 Then install dependencies and launch the desktop application:
@@ -254,11 +254,11 @@ Additional documentation: [architecture](docs/architecture.md), [UI/UX audit](do
 
 Project code is licensed under the [MIT License](LICENSE). The locally bundled Inter font is distributed under the [SIL Open Font License](public/licenses/Inter-OFL.txt). Dependency licenses remain applicable to their respective components.
 
-[mvp1-acceptance]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/mvp-1-acceptance.md
-[mvp1-formats]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/mvp-1-formats.md
-[mvp1-validation]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/mvp-1-validation.md
-[mvp1-privacy]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/privacy.md
-[mvp1-roadmap]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/roadmap.md
-[mvp1-architecture]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/architecture.md
-[mvp1-workspace]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/minimal-workspace.md
-[mvp1-builds]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/ci/README.md
+[mvp1-acceptance]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/mvp-1-acceptance.md
+[mvp1-formats]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/mvp-1-formats.md
+[mvp1-validation]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/mvp-1-validation.md
+[mvp1-privacy]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/privacy.md
+[mvp1-roadmap]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/roadmap.md
+[mvp1-architecture]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/architecture.md
+[mvp1-workspace]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/minimal-workspace.md
+[mvp1-builds]: https://github.com/a-cisse/dfir-log-explorer/blob/9684e828fbc9c84ff87a95d7504cb6f81aa934bc/docs/ci/README.md
