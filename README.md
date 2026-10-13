@@ -92,11 +92,11 @@ These captures show the current MVP 1 v0.2.1 review build with synthetic evidenc
 
 Compact event exploration with raw content visible:
 
-![MVP 1 compact log table with source and parsing filters](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/images/mvp-1-minimal-light.png)
+![MVP 1 compact log table with source and parsing filters](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/images/mvp-1-minimal-light.png)
 
 Inspecting a partially parsed event alongside the logs:
 
-![MVP 1 inspector showing the original log line and invalid timestamp diagnostic](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/images/mvp-1-minimal-inspector.png)
+![MVP 1 inspector showing the original log line and invalid timestamp diagnostic](https://raw.githubusercontent.com/a-cisse/dfir-log-explorer/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/images/mvp-1-minimal-inspector.png)
 
 See the [minimal workspace report][mvp1-workspace] for layout checks and Dark mode. The [MVP 0 redesign report](docs/ui-ux-redesign.md) retains the earlier interface captures.
 
@@ -111,7 +111,7 @@ Initial supported platforms are **Ubuntu 24.04 x64** and **Windows 11 x64**. Suc
 
 Use the [MVP 0 workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-0.yml) for the integrated version, or the [MVP 1 review workflow](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-1.yml) for the additional case/readers functionality. Check the branch and commit shown by the run, download your platform's artifact and extract it. In MVP 1 v0.2.1, the setup executable (Windows), or package and executable (Linux), appear directly at the ZIP root. Artifacts depend on successful platform builds and are retained for 14 days; build locally if a suitable artifact is unavailable.
 
-On Ubuntu, install the `.deb` using your normal package manager. On Windows, run the setup executable. Windows test packages are unsigned. Follow the [MVP 0 acceptance guide](docs/mvp-0-acceptance.md) or [MVP 1 acceptance guide][mvp1-acceptance] for the version you downloaded. See [build verification](docs/ci/README.md) for the integrated workflow and [MVP 1 build verification][mvp1-builds] for the corrected downloads.
+On Ubuntu, install the `.deb` using your normal package manager. On Windows, run the setup executable normally. A fresh installation proposes `%LOCALAPPDATA%\Programs\DFIR Log Explorer` for the current user without requesting administrator elevation. Start menu shortcuts and uninstall registration are user-specific. Existing installation directories and explicitly chosen destinations are retained. Windows test packages are unsigned. Follow the [MVP 0 acceptance guide](docs/mvp-0-acceptance.md) or [MVP 1 acceptance guide][mvp1-acceptance] for the version you downloaded. See [build verification](docs/ci/README.md) for the integrated workflow and [MVP 1 build verification][mvp1-builds] for the corrected downloads.
 
 Packaged applications do not require Rust or Node.js runtimes. They use the operating system's webview: WebKitGTK on Linux and WebView2 on Windows. The Windows package embeds the offline WebView2 installer, so installing that runtime does not require an Internet connection. The shared runtime can subsequently be maintained by Windows; bundling a fixed runtime is a future distribution improvement.
 
@@ -135,7 +135,7 @@ cd dfir-log-explorer
 A fresh clone checks out `main` (MVP 0). To reproduce the verified MVP 1 review implementation, switch to its revision before installing dependencies:
 
 ```sh
-git switch --detach 5c69aa66df16ea40e153d4ffeba12c9a6f955695
+git switch --detach c6689d8d8d58c7fd5401844f8ccae011cb162b4d
 ```
 
 Then install dependencies and launch the desktop application:
@@ -254,11 +254,11 @@ Additional documentation: [architecture](docs/architecture.md), [UI/UX audit](do
 
 Project code is licensed under the [MIT License](LICENSE). The locally bundled Inter font is distributed under the [SIL Open Font License](public/licenses/Inter-OFL.txt). Dependency licenses remain applicable to their respective components.
 
-[mvp1-acceptance]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/mvp-1-acceptance.md
-[mvp1-formats]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/mvp-1-formats.md
-[mvp1-validation]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/mvp-1-validation.md
-[mvp1-privacy]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/privacy.md
-[mvp1-roadmap]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/roadmap.md
-[mvp1-architecture]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/architecture.md
-[mvp1-workspace]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/minimal-workspace.md
-[mvp1-builds]: https://github.com/a-cisse/dfir-log-explorer/blob/5c69aa66df16ea40e153d4ffeba12c9a6f955695/docs/ci/README.md
+[mvp1-acceptance]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/mvp-1-acceptance.md
+[mvp1-formats]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/mvp-1-formats.md
+[mvp1-validation]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/mvp-1-validation.md
+[mvp1-privacy]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/privacy.md
+[mvp1-roadmap]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/roadmap.md
+[mvp1-architecture]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/architecture.md
+[mvp1-workspace]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/minimal-workspace.md
+[mvp1-builds]: https://github.com/a-cisse/dfir-log-explorer/blob/c6689d8d8d58c7fd5401844f8ccae011cb162b4d/docs/ci/README.md
