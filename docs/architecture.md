@@ -59,4 +59,6 @@ Temporary storage is explicitly dropped in Tauri's exit callback, because the fr
 
 Build the Windows and Linux installers on their respective platforms. Initial support is Windows 11 x64 and Ubuntu 24.04 x64. WebView2 and WebKitGTK differ, so a successful compile does not substitute for interactive acceptance testing on each platform.
 
+Windows MSVC builds use a static C/C++ runtime, consistently across direct Cargo checks and Tauri packaging. The `cc` build driver propagates `crt-static` to the embedded DuckDB compilation. See the build-verification document for platform checks and artifact availability.
+
 The initial Windows package embeds the offline WebView2 installer. This is an explicit MVP 0 packaging compromise compared with the proposed fixed runtime: users get offline installation, while the shared runtime lifecycle remains outside application control. Fixed-runtime distribution will require bundling, licensing review, and a runtime patching process.

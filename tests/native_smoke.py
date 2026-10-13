@@ -5,28 +5,29 @@ Start tauri-driver inside an Xvfb/DBus session, then run:
 """
 
 import base64
+import http.client
 import json
 import pathlib
 import sys
 import time
-import urllib.error
-import urllib.request
 
 URL = "http://127.0.0.1:4444"
 ELEMENT = "element-6066-11e4-a52e-4f735466cecf"
+CONNECTION = http.client.HTTPConnection("127.0.0.1", 4444, timeout=30)
 
 
 def command(method, path, payload=None):
     data = None if payload is None else json.dumps(payload).encode()
-    request = urllib.request.Request(
-        URL + path, data=data, method=method,
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            value = json.load(response).get("value")
-    except urllib.error.HTTPError as error:
-        raise RuntimeError(error.read().decode()) from error
+    # urllib forces Connection: close. Use a persistent connection so the
+    # intermediary does not race a reused, already-closed WebKit connection.
+    CONNECTION.request(method, path, body=data, headers={
+        "Content-Type": "application/json", "Connection": "keep-alive",
+    })
+    response = CONNECTION.getresponse()
+    body = response.read().decode()
+    if response.status >= 400:
+        raise RuntimeError(body)
+    value = json.loads(body).get("value")
     if isinstance(value, dict) and "error" in value:
         raise RuntimeError(value)
     return value

@@ -18,14 +18,12 @@ A private desktop workspace for exploring logs on Windows and Linux. Source file
 
 ## Download and test
 
-The [MVP 0 build workflow template](docs/ci/mvp-0.yml) can produce downloadable artifacts once an authorized maintainer adds it under `.github/workflows/`:
+The [MVP 0 checks and desktop builds](https://github.com/a-cisse/dfir-log-explorer/actions/workflows/mvp-0.yml) workflow produces downloadable artifacts after a successful run:
 
 - `dfir-log-explorer-linux`: Ubuntu 24.04 x64 `.deb` and application executable.
 - `dfir-log-explorer-windows`: Windows x64 NSIS setup executable.
 
-The current GitHub authentication cannot publish workflow files, so the template is initially stored as documentation and **CI artifacts are not yet available**. It can be activated through a maintainer's normal GitHub workflow. No credentials or token permissions were changed. See [CI activation](docs/ci/README.md).
-
-After activation and a successful run, these are test builds from the task branch, not a production release. Windows packages are initially unsigned. Download the artifact for your system from the workflow run's summary, extract it, and follow [the acceptance guide](docs/mvp-0-acceptance.md).
+These are test builds from the task branch, not a production release. Windows packages are initially unsigned. Download the artifact for your system from the workflow run's summary, extract it, and follow [the acceptance guide](docs/mvp-0-acceptance.md). See [build verification](docs/ci/README.md) for the workflow and artifact details. Artifact availability depends on successful platform builds.
 
 For an Ubuntu package, review and install the `.deb` with your normal package manager. For Windows, run the setup executable. The Windows installer embeds the offline WebView2 installer; an Internet connection is not required to install that runtime. A fixed WebView2 runtime is a future distribution improvement, and the installed shared runtime can be maintained separately by Windows.
 

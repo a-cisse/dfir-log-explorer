@@ -1,16 +1,11 @@
-# Activating desktop build verification
+# Desktop build verification
 
-The repository's existing Git authentication rejected a task-branch push containing `.github/workflows/mvp-0.yml`, because its token lacks the `workflow` scope. The application is delivered on a clean branch without any workflow-file changes in its ancestry. The original local development branch is retained; no published history or credential configuration was rewritten.
+The active workflow is [mvp-0.yml](../../.github/workflows/mvp-0.yml). It runs on task-branch pushes and pull requests, with read-only repository permissions. Do not merge the pull request without human approval.
 
-The ready-to-use workflow is [mvp-0.yml](mvp-0.yml). An authorized maintainer can add it through GitHub's web interface, or copy it with their normal workflow-capable authentication:
+The interface job checks TypeScript, the production asset bundle, formatting, preview boundaries, and Chromium workflows. The desktop matrix builds on Ubuntu 24.04 and Windows 2025, runs workspace Rust tests and Clippy in release mode, and packages Linux `.deb` and Windows NSIS installers.
 
-```sh
-mkdir -p .github/workflows
-cp docs/ci/mvp-0.yml .github/workflows/mvp-0.yml
-```
+The workflow uses synthetic data only and retains platform build artifacts for 14 days. No credentials or private evidence are required or published. Build infrastructure can download public dependencies; application runtime and log processing remain local.
 
-Commit that file to the task branch and open or update its pull request. Do not merge without human approval. Do not send credentials or tokens through chat, commit them, or add them to the workflow.
+Open a successful workflow run and download `dfir-log-explorer-linux` or `dfir-log-explorer-windows` from its artifacts section. Extract the archive and follow the acceptance guide. Platform build success does not substitute for interactive Windows/Linux testing or an offline runtime audit.
 
-The workflow runs interface checks and release-mode Rust checks, then builds `.deb` and Windows NSIS packages. It uses synthetic data only and publishes build artifacts for 14 days. This is build infrastructure; application runtime and log processing remain local.
-
-Until it is activated, Windows build results and downloadable CI installers are unavailable. Local build and acceptance commands are documented in the project README.
+See `docs/validation.md` for actual observed results. The initial local Linux package is a debug acceptance build; workflow installers use the release profile.

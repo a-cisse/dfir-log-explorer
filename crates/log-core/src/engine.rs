@@ -172,9 +172,9 @@ impl Engine {
         let (mut bytes_read, mut lines, mut parsed, mut text, mut warnings) =
             (0u64, 0u64, 0u64, 0u64, 0u64);
 
-        self.connection
-            .execute_batch("BEGIN TRANSACTION; DELETE FROM events;")?;
+        self.connection.execute_batch("BEGIN TRANSACTION;")?;
         let result = (|| {
+            self.connection.execute_batch("DELETE FROM events;")?;
             let mut appender = self.connection.appender("events")?;
             progress(ImportProgress {
                 bytes_read: 0,
