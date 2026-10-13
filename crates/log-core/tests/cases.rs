@@ -364,3 +364,30 @@ fn duplicate_json_keys_are_diagnosed_and_demo_metadata_commits_with_source() {
     assert_eq!(source.name, "Synthetic sample");
     assert_eq!(source.provenance, "Bundled synthetic fixture");
 }
+
+#[cfg(unix)]
+#[test]
+fn failed_snapshot_publication_restores_the_original_connection() {
+    let directory = tempfile::tempdir().unwrap();
+    let destination = directory.path().join("occupied.dfir");
+    std::os::unix::fs::symlink(directory.path().join("missing-target"), &destination).unwrap();
+    let mut engine = Engine::new().unwrap();
+    import(&mut engine, b"keep this evidence\n", ParserMode::Text);
+    assert_eq!(engine.query(&query()).unwrap().total, 1);
+    // A dangling link passes try_exists, but atomic publication must refuse it.
+    // This exercises the error path after the original connection was closed.
+    assert!(matches!(
+        engine.save_case(&destination),
+        Err(EngineError::CaseExists)
+    ));
+    assert!(std::fs::symlink_metadata(&destination)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(engine.case_summary().unwrap().path.is_none());
+    assert_eq!(engine.detail(1).unwrap().raw, "keep this evidence");
+    assert_eq!(engine.query(&query()).unwrap().total, 1);
+    engine
+        .save_case(&directory.path().join("recovered.dfir"))
+        .unwrap();
+}

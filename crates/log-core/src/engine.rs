@@ -52,6 +52,8 @@ pub enum EngineError {
     CaseExists,
     #[error("This case is already saved. Open it by its current filename.")]
     AlreadySaved,
+    #[error("The case connection is unavailable after reopening local storage. The original case file is retained.")]
+    CaseUnavailable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,7 +129,7 @@ type StatisticsCache = std::collections::VecDeque<(String, Vec<Value>, Statistic
 
 pub struct Engine {
     statistics_cache: std::cell::RefCell<StatisticsCache>,
-    connection: Connection,
+    connection: Option<Connection>,
     _storage: Option<TempDir>,
     database_path: PathBuf,
     case_name: String,
@@ -157,12 +159,16 @@ impl Engine {
         )?;
         Ok(Self {
             statistics_cache: std::cell::RefCell::new(StatisticsCache::new()),
-            connection,
+            connection: Some(connection),
             _storage: Some(storage),
             database_path: path,
             case_name: "Temporary case".into(),
             has_json_attributes: false,
         })
+    }
+
+    fn connection(&self) -> Result<&Connection, EngineError> {
+        self.connection.as_ref().ok_or(EngineError::CaseUnavailable)
     }
 
     fn connect(path: &Path) -> Result<Connection, EngineError> {
@@ -212,7 +218,7 @@ impl Engine {
         )?;
         let engine = Self {
             statistics_cache: std::cell::RefCell::new(StatisticsCache::new()),
-            connection,
+            connection: Some(connection),
             _storage: None,
             database_path: path.to_path_buf(),
             case_name: name,
@@ -228,7 +234,10 @@ impl Engine {
         if self._storage.is_none() {
             return Err(EngineError::AlreadySaved);
         }
-        self.connection.execute_batch("CHECKPOINT;")?;
+        if self.connection.is_none() {
+            self.connection = Some(Self::connect(&self.database_path)?);
+        }
+        self.connection()?.execute_batch("CHECKPOINT;")?;
         if path.try_exists()? {
             return Err(EngineError::CaseExists);
         }
@@ -237,18 +246,27 @@ impl Engine {
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
         let mut destination = tempfile::NamedTempFile::new_in(parent)?;
-        std::io::copy(
-            &mut File::open(&self.database_path)?,
-            destination.as_file_mut(),
-        )?;
-        destination.as_file().sync_all()?;
-        destination.persist_noclobber(path).map_err(|error| {
-            if error.error.kind() == std::io::ErrorKind::AlreadyExists {
-                EngineError::CaseExists
-            } else {
-                EngineError::Io(error.error)
-            }
-        })?;
+        // DuckDB holds an exclusive database-file handle on Windows. A
+        // checkpoint alone does not permit a second reader, so release it for
+        // the snapshot, then restore the current case before propagating errors.
+        drop(self.connection.take());
+        let copied = (|| -> Result<(), EngineError> {
+            std::io::copy(
+                &mut File::open(&self.database_path)?,
+                destination.as_file_mut(),
+            )?;
+            destination.as_file().sync_all()?;
+            destination.persist_noclobber(path).map_err(|error| {
+                if error.error.kind() == std::io::ErrorKind::AlreadyExists {
+                    EngineError::CaseExists
+                } else {
+                    EngineError::Io(error.error)
+                }
+            })?;
+            Ok(())
+        })();
+        self.connection = Some(Self::connect(&self.database_path)?);
+        copied?;
         let mut saved = Self::open_case(path)?;
         saved.case_name = path
             .file_stem()
@@ -256,7 +274,7 @@ impl Engine {
             .to_string_lossy()
             .into_owned();
         saved
-            .connection
+            .connection()?
             .execute("UPDATE case_meta SET name = ?", params![saved.case_name])?;
         let summary = saved.case_summary()?;
         *self = saved;
@@ -265,7 +283,7 @@ impl Engine {
 
     pub fn case_summary(&self) -> Result<CaseSummary, EngineError> {
         let mut statement = self
-            .connection
+            .connection()?
             .prepare("SELECT summary FROM sources ORDER BY id")?;
         let serialized = statement
             .query_map([], |row| row.get::<_, String>(0))?
@@ -339,20 +357,20 @@ impl Engine {
             mut unparsed,
         ) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
 
-        let source_id: i64 = self.connection.query_row(
+        let source_id: i64 = self.connection()?.query_row(
             "SELECT coalesce(max(id), 0) + 1 FROM sources",
             [],
             |row| row.get(0),
         )?;
         let first_id: i64 =
-            self.connection
+            self.connection()?
                 .query_row("SELECT coalesce(max(id), 0) FROM events", [], |row| {
                     row.get(0)
                 })?;
-        self.connection.execute_batch("BEGIN TRANSACTION;")?;
+        self.connection()?.execute_batch("BEGIN TRANSACTION;")?;
         let result = (|| {
-            let mut appender = self.connection.appender("events")?;
-            let mut attributes = self.connection.appender("event_attributes")?;
+            let mut appender = self.connection()?.appender("events")?;
+            let mut attributes = self.connection()?.appender("event_attributes")?;
             progress(ImportProgress {
                 bytes_read: 0,
                 total_bytes,
@@ -484,17 +502,17 @@ impl Engine {
             };
             let serialized =
                 serde_json::to_string(&summary).map_err(|_| EngineError::UnsupportedCase)?;
-            self.connection.execute(
+            self.connection()?.execute(
                 "INSERT INTO sources VALUES (?, ?)",
                 params![source_id, serialized],
             )?;
-            self.connection.execute_batch("COMMIT;")?;
+            self.connection()?.execute_batch("COMMIT;")?;
             Ok(summary)
         })();
         let summary = match result {
             Ok(summary) => summary,
             Err(error) => {
-                self.connection.execute_batch("ROLLBACK;")?;
+                self.connection()?.execute_batch("ROLLBACK;")?;
                 return Err(error);
             }
         };
@@ -521,7 +539,7 @@ impl Engine {
         let statistics = match cached {
             Some(stats) => stats,
             None => {
-                let stats = statistics(&self.connection, &predicate, &values)?;
+                let stats = statistics(self.connection()?, &predicate, &values)?;
                 let mut cache = self.statistics_cache.borrow_mut();
                 if cache.len() == 4 {
                     cache.pop_front();
@@ -532,7 +550,7 @@ impl Engine {
         };
         let total = statistics.total;
         let rows = if query.is_original_order() {
-            let mut statement = self.connection.prepare(&format!(
+            let mut statement = self.connection()?.prepare(&format!(
                 "SELECT {LIST_COLUMNS} FROM events WHERE id > ? ORDER BY id LIMIT ?"
             ))?;
             statement
@@ -540,7 +558,7 @@ impl Engine {
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             let direction = if query.descending { "DESC" } else { "ASC" };
-            let mut statement = self.connection.prepare(&format!(
+            let mut statement = self.connection()?.prepare(&format!(
                 "SELECT {LIST_COLUMNS} FROM events WHERE {predicate} ORDER BY {} {direction} NULLS LAST, id ASC LIMIT ? OFFSET ?",
                 query.sort_by.sql()
             ))?;
@@ -565,7 +583,7 @@ impl Engine {
         if id > i64::MAX as u64 {
             return Err(EngineError::EventNotFound);
         }
-        let mut statement = self.connection.prepare(
+        let mut statement = self.connection()?.prepare(
             "SELECT id, line_number, byte_offset, substring(message, 1, 240), parser,
                     timestamp, timestamp_ms, source_ip, method, path, protocol, status,
                     response_bytes, referrer, user_agent, parse_error, parse_status, source_id, json_fields, message, raw
@@ -630,7 +648,8 @@ mod security_tests {
             "allow_community_extensions",
         ] {
             let enabled: bool = engine
-                .connection
+                .connection()
+                .unwrap()
                 .query_row(&format!("SELECT current_setting('{setting}')"), [], |row| {
                     row.get(0)
                 })
@@ -639,7 +658,8 @@ mod security_tests {
         }
         let source = tempfile::NamedTempFile::new().unwrap();
         assert!(engine
-            .connection
+            .connection()
+            .unwrap()
             .query_row(
                 "SELECT content FROM read_text(?)",
                 params![source.path().to_str().unwrap()],
@@ -647,7 +667,8 @@ mod security_tests {
             )
             .is_err());
         assert!(engine
-            .connection
+            .connection()
+            .unwrap()
             .execute_batch("SET enable_external_access = true")
             .is_err());
     }

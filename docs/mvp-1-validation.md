@@ -6,7 +6,7 @@ Recorded on 2026-10-13 for version 0.2.0 on the same Ubuntu 24.04 x64 VPS used f
 
 | Check                                 | Actual result                                                                                                                                                                                              |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rust workspace tests                  | Passed: 26 tests, including seven new case/format regressions; desktop test targets compile                                                                                                                |
+| Rust workspace tests                  | Passed: 27 Linux tests, including eight new case/format regressions (one publication-error regression is Unix-specific); desktop test targets compile                                                      |
 | Workspace Clippy with warnings denied | Passed                                                                                                                                                                                                     |
 | Rust formatting                       | Passed                                                                                                                                                                                                     |
 | TypeScript and production asset build | Passed                                                                                                                                                                                                     |
@@ -43,5 +43,7 @@ An initial MVP 1 measurement exposed an unnecessary JSON search join in cases co
 These measurements exclude native UI/IPC and save-copy time, use repetitive/cached input and are not mixed-format, larger-than-RAM or product-comparison benchmarks. They do not establish a global process-memory limit or predict all real workloads.
 
 ## Platform delivery and acceptance
+
+The first Windows CI run found that DuckDB’s exclusive file handle prevented copying a checkpointed case. Save now releases that connection during the copy and restores it before returning or switching cases; the persistence regressions exercise that path on both platforms. A Unix-specific publication-error test additionally verifies the original connection, cached queries and evidence survive a failure after the connection is closed.
 
 The [MVP 1 workflow](../.github/workflows/mvp-1.yml) runs interface checks and builds/tests/packages Linux and Windows independently. Its live run is the authoritative record for platform CI results and downloadable release installers. Interactive Windows acceptance and a new native/offline traffic audit were not performed locally. MVP 0 acceptance is recorded in the roadmap; MVP 1 still requires explicit human acceptance before MVP 2 begins.
