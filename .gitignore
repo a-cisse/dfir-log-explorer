@@ -34,6 +34,9 @@ src-tauri/icons/*
 /data/
 /exports/
 /tmp/
+*.dfir
+*.dfir.wal
+*.dfir.tmp/
 *.duckdb
 *.duckdb.wal
 *.duckdb.tmp/

@@ -105,10 +105,105 @@ async function loadSample(page: import("@playwright/test").Page) {
   await expect(page.getByText("1–13 of 13 events")).toBeVisible();
 }
 
+test("logs occupy the main viewport and secondary controls open on demand", async ({
+  page,
+}) => {
+  await loadSample(page);
+  await expect(page.locator(".app-layout")).toHaveClass(/sidebar-collapsed/);
+  await expect(page.getByLabel("Source parsing statistics")).toHaveCount(0);
+  await expect(page.getByLabel("Event timeline")).toHaveCount(0);
+  await expect(page.getByLabel("Timestamp presence")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Additional filters" }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("columnheader")).toHaveCount(4);
+  for (const viewport of [
+    { width: 1440, height: 940 },
+    { width: 1280, height: 720 },
+    { width: 1000, height: 650 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const table = await page.locator(".table-shell").boundingBox();
+    const firstRow = await page.locator(".table-row").first().boundingBox();
+    expect(firstRow!.y).toBeLessThanOrEqual(220);
+    expect(table!.height).toBeGreaterThan(viewport.height * 0.6);
+    expect(
+      await page.evaluate(() => ({
+        width: document.documentElement.scrollWidth,
+        height: document.documentElement.scrollHeight,
+      })),
+    ).toEqual(viewport);
+    await expect(
+      page.getByRole("columnheader", { name: "Raw log preview" }),
+    ).toBeInViewport();
+  }
+  await page.setViewportSize({ width: 1440, height: 940 });
+  await page.screenshot({ path: "/tmp/dfir-minimal-light.png" });
+  await page.getByRole("row").filter({ hasText: "192.0.2.14" }).click();
+  await page.getByRole("tab", { name: "Parse Diagnostics" }).click();
+  await page.screenshot({ path: "/tmp/dfir-minimal-inspector.png" });
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("combobox", { name: "Theme preference" })
+    .selectOption("dark");
+  await page.screenshot({ path: "/tmp/dfir-minimal-dark.png" });
+  await page.getByRole("button", { name: "Case actions" }).click();
+  await expect(
+    page.getByRole("button", { name: "Save case as…" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Save case as…" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Case actions" }),
+  ).toBeFocused();
+});
+
+test("legacy default columns become compact while custom layouts survive", async ({
+  page,
+}) => {
+  const previous = [
+    "sourceId",
+    "lineNumber",
+    "timestamp",
+    "sourceIp",
+    "method",
+    "path",
+    "status",
+    "parseStatus",
+    "preview",
+  ];
+  await page.goto("/");
+  await page.evaluate(
+    (columns) => localStorage.setItem("dfir.columns", JSON.stringify(columns)),
+    previous,
+  );
+  await loadSample(page);
+  await expect(page.getByRole("columnheader")).toHaveCount(4);
+  const custom = ["lineNumber", "sourceIp", "preview"];
+  await page.evaluate((columns) => {
+    localStorage.removeItem("dfir.columns.v2");
+    localStorage.setItem("dfir.columns", JSON.stringify(columns));
+  }, custom);
+  await loadSample(page);
+  await expect(page.getByRole("columnheader")).toHaveCount(3);
+  await expect(
+    page.getByRole("columnheader", { name: "Client IP" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "Timestamp / source offset" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await loadSample(page);
+  await expect(page.getByRole("columnheader")).toHaveCount(3);
+});
+
 test("parsing states retain raw evidence, independent warnings and real aggregates", async ({
   page,
 }) => {
   await loadSample(page);
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
   const summary = page.getByLabel("Source parsing statistics");
   await expect(summary).toContainText("11");
   await expect(page.getByLabel("Filtered HTTP statistics")).toContainText(
@@ -117,6 +212,7 @@ test("parsing states retain raw evidence, independent warnings and real aggregat
   await expect(page.getByLabel("Event timeline")).toContainText(
     "2 without valid timestamp",
   );
+  await page.getByRole("button", { name: "Back to logs" }).click();
   const filters = page.getByLabel("Parsing status filters");
   await filters.getByRole("button", { name: "Partial", exact: true }).click();
   await expect(page.getByText("1–1 of 1 events")).toBeVisible();
@@ -134,12 +230,14 @@ test("parsing states retain raw evidence, independent warnings and real aggregat
   await page.keyboard.press("Escape");
   await filters.getByRole("button", { name: "Unparsed", exact: true }).click();
   await expect(page.getByText("1–1 of 1 events")).toBeVisible();
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
   await expect(page.getByLabel("Event timeline")).toContainText(
     "1 without valid timestamp",
   );
   await expect(page.getByLabel("Filtered HTTP statistics")).toContainText(
     "0 requests",
   );
+  await page.getByRole("button", { name: "Back to logs" }).click();
   await page.getByRole("row").filter({ hasText: "<img src=" }).click();
   await expect(inspector.locator(".raw-event")).toContainText("<img src=");
   await expect(inspector.locator("img")).toHaveCount(0);
@@ -154,6 +252,7 @@ test("field searches, exact filters, sorting, timeline and configurable columns 
   page,
 }) => {
   await loadSample(page);
+  await page.getByRole("button", { name: "Additional filters" }).click();
   await page
     .getByRole("combobox", { name: "Search field", exact: true })
     .selectOption("timestamp");
@@ -163,6 +262,11 @@ test("field searches, exact filters, sorting, timeline and configurable columns 
   await expect(page.getByText("1–1 of 1 events")).toBeVisible();
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(page.getByText("1–13 of 13 events")).toBeVisible();
+  await page.getByRole("button", { name: "Columns", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "HTTP status", exact: true })
+    .check();
+  await page.getByRole("button", { name: "Columns", exact: true }).click();
   await page
     .getByRole("columnheader", { name: "HTTP status" })
     .getByRole("button")
@@ -193,6 +297,7 @@ test("field searches, exact filters, sorting, timeline and configurable columns 
   await expect(page.locator(".filter-chips")).toContainText("198.51.100.24");
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(page.getByText("1–13 of 13 events")).toBeVisible();
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
   await page
     .getByRole("button", { name: "Filter interval", exact: false })
     .first()
@@ -200,6 +305,7 @@ test("field searches, exact filters, sorting, timeline and configurable columns 
   await expect(page.getByText("1–1 of 1 events")).toBeVisible();
   await expect(page.locator(".filter-chips")).toContainText("UTC");
   await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await page.getByRole("button", { name: "Additional filters" }).click();
   await page.getByRole("button", { name: "Time range", exact: true }).click();
   await page.getByLabel("Time from UTC").fill("2026-10-13T09:14");
   await page.getByLabel("Time to UTC").fill("2026-10-13T09:14:01");
@@ -245,12 +351,15 @@ test("themes, navigation, evidence, inspector closure and desktop dimensions", a
   ).toBeVisible();
   await expect(page.locator(".hash-value")).toHaveText(/[a-f0-9]{64}/);
   await page.getByRole("button", { name: "Parsers", exact: true }).click();
-  await expect(page.locator(".parser-card")).toHaveCount(3);
+  await expect(page.locator(".parser-card")).toHaveCount(5);
   await page
     .getByRole("button", { name: "Select parser", exact: true })
     .first()
     .click();
   await expect(page.getByLabel("Parser format")).toHaveValue("apache");
+  await page
+    .getByRole("button", { name: "Expand sidebar", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Collapse sidebar", exact: true })
     .click();
@@ -306,6 +415,52 @@ test("keyboard navigation and clipboard preserve complete selected raw content",
   await expect(inspector.getByText("Copied to clipboard.")).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(raw);
   await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
   await page.getByLabel("Timeline distribution").selectOption("http");
   await expect(page.locator(".chart-legend")).toContainText("2xx");
+});
+
+test("case controls, source provenance and timestamp filters are usable", async ({
+  page,
+}) => {
+  await loadSample(page);
+  await page.getByLabel("Parser format").selectOption("nginx");
+  await page.getByLabel("Parser format").selectOption("json_lines");
+  await page.getByLabel("Parser format").selectOption("auto");
+  await page.getByRole("button", { name: "Case actions" }).click();
+  await expect(page.getByLabel("Case management")).toContainText(
+    "Temporary case",
+  );
+  await expect(page.getByLabel("Case management")).toContainText("1 sources");
+  await page.getByRole("button", { name: "Save case as…" }).click();
+  await expect(page.getByRole("alert")).toContainText("desktop application");
+  await page.getByRole("combobox", { name: "Source filter" }).selectOption("1");
+  await page.getByRole("button", { name: "Additional filters" }).click();
+  await page
+    .getByRole("combobox", { name: "Timestamp presence" })
+    .selectOption("false");
+  await expect(page.getByText("1–2 of 2 events")).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Reader filter" })
+    .selectOption("apache");
+  await expect(page.getByText("1–1 of 1 events")).toBeVisible();
+  await page.getByRole("button", { name: "Additional filters" }).click();
+  await expect(page.getByLabel("Timestamp presence")).toHaveCount(0);
+  await expect(page.locator(".filter-chips")).toContainText("Reader: apache");
+  await expect(page.locator(".filter-chips")).toContainText(
+    "Timestamp: missing / invalid",
+  );
+  await page.locator(".table-row").click();
+  await expect(page.locator(".event-provenance")).toContainText("Source #1");
+  await expect(page.locator(".event-provenance")).toContainText("SHA-256:");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.getByText("1–13 of 13 events")).toBeVisible();
+  await page.getByRole("button", { name: "Case actions" }).click();
+  await page.getByRole("button", { name: "New case", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "A clearer view of your logs." }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Case actions" }).click();
+  await expect(page.getByLabel("Case management")).toContainText("0 sources");
 });

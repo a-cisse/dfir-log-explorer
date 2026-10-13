@@ -29,9 +29,11 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
           Missing timestamps stay outside the timeline.
         </p>
         <p>
-          Sessions are temporary. A successful import replaces the current
-          source; cancellation preserves it. Normal exit removes session
-          storage. A forced termination can leave temporary files.
+          Imports add sources to the active case; cancellation preserves
+          previous evidence. Save case as… retains all imported data in a local
+          file. Saved cases reopen without the original logs and save future
+          imports automatically. Unsaved temporary cases are removed on normal
+          exit.
         </p>
         <div className="shortcut-list">
           <span>

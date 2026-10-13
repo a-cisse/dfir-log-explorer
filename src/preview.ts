@@ -76,7 +76,7 @@ function statistics(rows: EventDetail[]): Statistics {
     stats[row.parseStatus]++;
     if (row.parseError !== null) stats.warnings++;
     if (row.timestampMs === null) stats.missingTimestamp++;
-    if (row.parser === "apache" && row.method !== null) stats.totalRequests++;
+    if (row.method !== null) stats.totalRequests++;
     const group = row.status === null ? -1 : Math.floor(row.status / 100) - 2;
     if (group >= 0 && group < 4) stats.responses[group]++;
     if (row.timestampMs !== null && min !== null) {
@@ -93,6 +93,23 @@ function statistics(rows: EventDetail[]): Statistics {
 }
 export const previewBridge: Bridge = {
   isDesktop: false,
+  async caseSummary() {
+    return {
+      name: "Temporary case",
+      path: null,
+      sources: loaded ? [sample.summary as SourceSummary] : [],
+    };
+  },
+  async saveCase() {
+    throw new Error("Persistent cases require the desktop application.");
+  },
+  async openCase() {
+    throw new Error("Persistent cases require the desktop application.");
+  },
+  async closeCase() {
+    loaded = false;
+    return this.caseSummary();
+  },
   async pickFile() {
     throw new Error(
       "Open the desktop application to import your local files. This preview uses synthetic data only.",
@@ -155,6 +172,13 @@ export const previewBridge: Bridge = {
               : field(row, query.searchField)
                   .toLowerCase()
                   .includes(query.search.toLowerCase())) &&
+            (query.sourceId == null || query.sourceId === row.sourceId) &&
+            (query.parser == null || query.parser === row.parser) &&
+            (query.hasTimestamp == null ||
+              query.hasTimestamp === (row.timestampMs !== null)) &&
+            (!query.jsonFilter ||
+              String(row.jsonFields?.[query.jsonFilter.key]) ===
+                query.jsonFilter.value) &&
             (!query.onlyWarnings || row.parseError !== null) &&
             (!query.parseStatus || query.parseStatus === row.parseStatus) &&
             (!query.fieldFilter ||
@@ -173,7 +197,9 @@ export const previewBridge: Bridge = {
         ? "timestampMs"
         : query.sortBy === "preview"
           ? "raw"
-          : (query.sortBy ?? "lineNumber");
+          : query.sortBy === "lineNumber"
+            ? "id"
+            : (query.sortBy ?? "id");
     rows.sort((a, b) => {
       const av = a[key],
         bv = b[key];

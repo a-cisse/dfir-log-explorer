@@ -1,7 +1,18 @@
-import { useState } from "react";
-import { AlertTriangle, CalendarRange, RotateCcw, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  CalendarRange,
+  RotateCcw,
+  X,
+  SlidersHorizontal,
+} from "lucide-react";
 import { statusLabels } from "./ParsingStatusBadge";
-import type { FieldFilter, ParseStatus, SearchField } from "./types";
+import type {
+  FieldFilter,
+  ParseStatus,
+  SearchField,
+  SourceSummary,
+} from "./types";
 export const searchFields: { key: SearchField; label: string }[] = [
   { key: "all", label: "All fields + raw" },
   { key: "raw", label: "Raw log" },
@@ -16,6 +27,11 @@ export const searchFields: { key: SearchField; label: string }[] = [
   { key: "userAgent", label: "User-Agent" },
 ];
 export function LogFilterBar({
+  source,
+  sourceSelector,
+  advanced,
+  extraChips,
+  advancedActive,
   status,
   onStatus,
   warnings,
@@ -32,6 +48,11 @@ export function LogFilterBar({
   disabled,
   onError,
 }: {
+  source: SourceSummary;
+  sourceSelector: ReactNode;
+  advanced: ReactNode;
+  extraChips: ReactNode;
+  advancedActive: boolean;
   status: ParseStatus | null;
   onStatus: (v: ParseStatus | null) => void;
   warnings: boolean;
@@ -48,6 +69,7 @@ export function LogFilterBar({
   disabled: boolean;
   onError: (v: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [field, setField] = useState<SearchField>("sourceIp");
@@ -59,16 +81,28 @@ export function LogFilterBar({
   return (
     <div className="filter-area">
       <div className="filter-bar">
+        {sourceSelector}
         <div className="status-filters" aria-label="Parsing status filters">
           {([null, "parsed", "partial", "unparsed"] as const).map((v) => (
             <button
               key={v ?? "all"}
+              aria-label={v ? statusLabels[v] : "All"}
+              title="Parsing counts for the selected sources"
               className={v === status ? "active" : ""}
               aria-pressed={v === status}
               disabled={disabled}
               onClick={() => onStatus(v)}
             >
               {v ? statusLabels[v] : "All"}
+              <span aria-hidden="true">
+                {v === "parsed"
+                  ? source.parsedEvents
+                  : v === "partial"
+                    ? source.partialEvents
+                    : v === "unparsed"
+                      ? source.unparsedEvents
+                      : source.totalEvents}
+              </span>
             </button>
           ))}
         </div>
@@ -82,37 +116,16 @@ export function LogFilterBar({
           <AlertTriangle size={13} />
           Warnings <span>{warningCount}</span>
         </button>
-        <label className="search-scope">
-          <span>Search in</span>
-          <select
-            aria-label="Search field"
-            disabled={disabled}
-            value={scope}
-            onChange={(e) => onScope(e.target.value as SearchField)}
-          >
-            {searchFields.map((f) => (
-              <option key={f.key} value={f.key}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
         <button
-          className="text-button"
+          className={`text-button more-filters ${advancedActive ? "active" : ""}`}
+          aria-label="Additional filters"
+          aria-expanded={expanded}
+          aria-controls="additional-filters"
           disabled={disabled}
-          aria-expanded={fieldOpen}
-          onClick={() => setFieldOpen(!fieldOpen)}
+          onClick={() => setExpanded(!expanded)}
         >
-          Field filter
-        </button>
-        <button
-          className="text-button"
-          disabled={disabled}
-          aria-expanded={timeOpen}
-          onClick={() => setTimeOpen(!timeOpen)}
-        >
-          <CalendarRange size={14} />
-          Time range
+          <SlidersHorizontal size={14} />
+          Filters{advancedActive && <span className="live-dot" />}
         </button>
         {filtered && (
           <button
@@ -125,7 +138,46 @@ export function LogFilterBar({
           </button>
         )}
       </div>
-      {fieldOpen && (
+      {expanded && (
+        <div className="additional-filters" id="additional-filters">
+          {advanced}
+          <div className="advanced-controls">
+            <label className="search-scope">
+              <span>Search in</span>
+              <select
+                aria-label="Search field"
+                disabled={disabled}
+                value={scope}
+                onChange={(e) => onScope(e.target.value as SearchField)}
+              >
+                {searchFields.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="text-button"
+              disabled={disabled}
+              aria-expanded={fieldOpen}
+              onClick={() => setFieldOpen(!fieldOpen)}
+            >
+              Field filter
+            </button>
+            <button
+              className="text-button"
+              disabled={disabled}
+              aria-expanded={timeOpen}
+              onClick={() => setTimeOpen(!timeOpen)}
+            >
+              <CalendarRange size={14} />
+              Time range
+            </button>
+          </div>
+        </div>
+      )}
+      {expanded && fieldOpen && (
         <form
           className="filter-form"
           onSubmit={(e) => {
@@ -164,7 +216,7 @@ export function LogFilterBar({
           </button>
         </form>
       )}
-      {timeOpen && (
+      {expanded && timeOpen && (
         <form
           className="filter-form"
           onSubmit={(e) => {
@@ -207,6 +259,19 @@ export function LogFilterBar({
             Apply time range
           </button>
         </form>
+      )}
+      {extraChips}
+      {scope !== "all" && (
+        <div className="filter-chips">
+          <button
+            className="filter-chip"
+            disabled={disabled}
+            onClick={() => onScope("all")}
+          >
+            Search: {searchFields.find((f) => f.key === scope)?.label}
+            <X size={12} />
+          </button>
+        </div>
       )}
       {(fieldFilter || timeRange.some((v) => v !== null)) && (
         <div className="filter-chips">

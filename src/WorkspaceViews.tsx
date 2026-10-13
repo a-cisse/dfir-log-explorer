@@ -12,7 +12,7 @@ import {
 import { formatBytes, formatNumber } from "./format";
 import { parsers } from "./workspace";
 import type { ParserMode, SourceSummary } from "./types";
-export function EvidenceView({
+function EvidenceItem({
   source,
   onExplore,
 }: {
@@ -86,13 +86,35 @@ export function EvidenceView({
             preserve the previous dataset.
           </p>
           <p>
-            This MVP holds one temporary source. A successful new import
-            replaces it; normal application exit removes the session. Persistent
-            cases and multiple sources are not available.
+            Imports add sources to the active case. Save a temporary case to
+            keep all imported evidence; saved cases reopen without the original
+            files.
           </p>
         </div>
       </div>
     </section>
+  );
+}
+export function EvidenceView({
+  sources,
+  onExplore,
+}: {
+  sources: SourceSummary[];
+  onExplore: () => void;
+}) {
+  return (
+    <div>
+      {sources.length === 0 ? (
+        <section className="secondary-view">
+          <h2>Active evidence</h2>
+          <p>No sources imported.</p>
+        </section>
+      ) : (
+        sources.map((source) => (
+          <EvidenceItem key={source.id} source={source} onExplore={onExplore} />
+        ))
+      )}
+    </div>
   );
 }
 export function ParsersView({
@@ -189,7 +211,8 @@ export function SettingsView({
       </div>
       <h2>Session</h2>
       <p>
-        Temporary local storage · one source · no telemetry or cloud backend.
+        Local cases with multiple sources · save and reopen your analysis · no
+        telemetry or cloud backend.
       </p>
       <button className="secondary-button" onClick={onHelp}>
         <CircleHelp size={15} />

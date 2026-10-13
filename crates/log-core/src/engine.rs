@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::File,
     io::{BufRead, BufReader, Read},
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -22,7 +22,7 @@ pub const PAGE_SIZE: u32 = 500;
 const LIST_COLUMNS: &str = "id, line_number, byte_offset, substring(message, 1, 240), parser,
     timestamp, timestamp_ms, substring(source_ip, 1, 160), substring(method, 1, 32),
     substring(path, 1, 240), substring(protocol, 1, 32), status, response_bytes,
-    substring(referrer, 1, 240), substring(user_agent, 1, 240), substring(parse_error, 1, 512), parse_status";
+    substring(referrer, 1, 240), substring(user_agent, 1, 240), substring(parse_error, 1, 512), parse_status, source_id, NULL AS json_fields";
 
 #[derive(Debug, Error)]
 pub enum EngineError {
@@ -46,6 +46,14 @@ pub enum EngineError {
     InvalidQuery,
     #[error("The selected event does not exist in this session.")]
     EventNotFound,
+    #[error("The selected file is not a supported DFIR case (schema version 1 required).")]
+    UnsupportedCase,
+    #[error("A case already exists at this location. Choose a new filename; existing files are never overwritten.")]
+    CaseExists,
+    #[error("This case is already saved. Open it by its current filename.")]
+    AlreadySaved,
+    #[error("The case connection is unavailable after reopening local storage. The original case file is retained.")]
+    CaseUnavailable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +68,7 @@ pub struct ImportProgress {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceSummary {
+    pub id: u64,
     pub name: String,
     pub provenance: String,
     pub parser_mode: ParserMode,
@@ -76,7 +85,16 @@ pub struct SourceSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CaseSummary {
+    pub name: String,
+    pub path: Option<String>,
+    pub sources: Vec<SourceSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventRow {
+    pub source_id: u64,
     pub id: u64,
     pub line_number: u64,
     pub byte_offset: u64,
@@ -105,14 +123,17 @@ pub struct QueryPage {
     pub elapsed_ms: u64,
 }
 
-/// One temporary, disk-backed database per analysis session. A single owner
+/// One local, disk-backed database per case. A single owner
 /// serializes access; the desktop layer runs all operations off the UI thread.
 type StatisticsCache = std::collections::VecDeque<(String, Vec<Value>, Statistics)>;
 
 pub struct Engine {
     statistics_cache: std::cell::RefCell<StatisticsCache>,
-    connection: Connection,
-    _storage: TempDir,
+    connection: Option<Connection>,
+    _storage: Option<TempDir>,
+    database_path: PathBuf,
+    case_name: String,
+    has_json_attributes: bool,
 }
 
 impl Engine {
@@ -120,40 +141,187 @@ impl Engine {
         let storage = tempfile::Builder::new()
             .prefix("dfir-log-explorer-")
             .tempdir()?;
-        let config = Config::default()
-            .enable_external_access(false)?
-            .max_memory("512MB")?
-            .threads(2)?;
-        let connection =
-            Connection::open_with_flags(storage.path().join("session.duckdb"), config)?;
+        let path = storage.path().join("session.duckdb");
+        let connection = Self::connect(&path)?;
         connection.execute_batch(
-            "SET autoinstall_known_extensions = false;
-             SET autoload_known_extensions = false;
-             SET allow_community_extensions = false;
-             SET lock_configuration = true;
+            "BEGIN;
+             CREATE TABLE case_meta (schema_version INTEGER, name VARCHAR);
+             INSERT INTO case_meta VALUES (1, 'Temporary case');
+             CREATE TABLE sources (id BIGINT PRIMARY KEY, summary VARCHAR);
+             CREATE TABLE event_attributes (event_id BIGINT, key VARCHAR, value VARCHAR);
              CREATE TABLE events (
                 id BIGINT, line_number BIGINT, byte_offset BIGINT, raw BLOB,
                 message VARCHAR, parser VARCHAR, timestamp VARCHAR, timestamp_ms BIGINT,
                 source_ip VARCHAR, method VARCHAR, path VARCHAR, protocol VARCHAR,
                 status INTEGER, response_bytes BIGINT, referrer VARCHAR, user_agent VARCHAR,
-                parse_error VARCHAR, parse_status VARCHAR
-             );",
+                parse_error VARCHAR, parse_status VARCHAR, source_id BIGINT, json_fields VARCHAR
+             ); COMMIT;",
         )?;
         Ok(Self {
             statistics_cache: std::cell::RefCell::new(StatisticsCache::new()),
-            connection,
-            _storage: storage,
+            connection: Some(connection),
+            _storage: Some(storage),
+            database_path: path,
+            case_name: "Temporary case".into(),
+            has_json_attributes: false,
         })
     }
 
-    /// Import atomically. Raw source bytes, including terminators and invalid
+    fn connection(&self) -> Result<&Connection, EngineError> {
+        self.connection.as_ref().ok_or(EngineError::CaseUnavailable)
+    }
+
+    fn connect(path: &Path) -> Result<Connection, EngineError> {
+        let config = Config::default()
+            .enable_external_access(false)?
+            .max_memory("512MB")?
+            .threads(2)?;
+        let connection = Connection::open_with_flags(path, config)?;
+        connection.execute_batch(
+            "SET autoinstall_known_extensions = false;
+            SET autoload_known_extensions = false; SET allow_community_extensions = false;
+            SET lock_configuration = true;",
+        )?;
+        Ok(connection)
+    }
+
+    /// Open only an existing case. Never initialize or migrate an unknown file.
+    pub fn open_case(path: &Path) -> Result<Self, EngineError> {
+        if !std::fs::metadata(path)?.is_file() {
+            return Err(EngineError::NotRegularFile);
+        }
+        let connection = Self::connect(path)?;
+        let (version, name): (i32, String) = connection
+            .query_row("SELECT schema_version, name FROM case_meta", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .map_err(|_| EngineError::UnsupportedCase)?;
+        if version != 1 {
+            return Err(EngineError::UnsupportedCase);
+        }
+        // Check required columns before replacing the active engine.
+        connection
+            .prepare("SELECT id, summary FROM sources")
+            .map_err(|_| EngineError::UnsupportedCase)?;
+        connection
+            .prepare(&format!(
+                "SELECT {LIST_COLUMNS}, json_fields, message, raw FROM events"
+            ))
+            .map_err(|_| EngineError::UnsupportedCase)?;
+        connection
+            .prepare("SELECT event_id, key, value FROM event_attributes")
+            .map_err(|_| EngineError::UnsupportedCase)?;
+        let has_json_attributes = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM event_attributes LIMIT 1)",
+            [],
+            |row| row.get(0),
+        )?;
+        let engine = Self {
+            statistics_cache: std::cell::RefCell::new(StatisticsCache::new()),
+            connection: Some(connection),
+            _storage: None,
+            database_path: path.to_path_buf(),
+            case_name: name,
+            has_json_attributes,
+        };
+        engine.case_summary()?;
+        Ok(engine)
+    }
+
+    /// Promote the complete temporary case, including raw bytes and provenance.
+    /// Existing files are never overwritten. Subsequent imports commit to disk.
+    pub fn save_case(&mut self, path: &Path) -> Result<CaseSummary, EngineError> {
+        if self._storage.is_none() {
+            return Err(EngineError::AlreadySaved);
+        }
+        if self.connection.is_none() {
+            self.connection = Some(Self::connect(&self.database_path)?);
+        }
+        self.connection()?.execute_batch("CHECKPOINT;")?;
+        if path.try_exists()? {
+            return Err(EngineError::CaseExists);
+        }
+        let parent = path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let mut destination = tempfile::NamedTempFile::new_in(parent)?;
+        // DuckDB holds an exclusive database-file handle on Windows. A
+        // checkpoint alone does not permit a second reader, so release it for
+        // the snapshot, then restore the current case before propagating errors.
+        drop(self.connection.take());
+        let copied = (|| -> Result<(), EngineError> {
+            std::io::copy(
+                &mut File::open(&self.database_path)?,
+                destination.as_file_mut(),
+            )?;
+            destination.as_file().sync_all()?;
+            destination.persist_noclobber(path).map_err(|error| {
+                if error.error.kind() == std::io::ErrorKind::AlreadyExists {
+                    EngineError::CaseExists
+                } else {
+                    EngineError::Io(error.error)
+                }
+            })?;
+            Ok(())
+        })();
+        self.connection = Some(Self::connect(&self.database_path)?);
+        copied?;
+        let mut saved = Self::open_case(path)?;
+        saved.case_name = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        saved
+            .connection()?
+            .execute("UPDATE case_meta SET name = ?", params![saved.case_name])?;
+        let summary = saved.case_summary()?;
+        *self = saved;
+        Ok(summary)
+    }
+
+    pub fn case_summary(&self) -> Result<CaseSummary, EngineError> {
+        let mut statement = self
+            .connection()?
+            .prepare("SELECT summary FROM sources ORDER BY id")?;
+        let serialized = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let sources = serialized
+            .iter()
+            .map(|value| serde_json::from_str(value).map_err(|_| EngineError::UnsupportedCase))
+            .collect::<Result<Vec<SourceSummary>, _>>()?;
+        Ok(CaseSummary {
+            name: self.case_name.clone(),
+            path: if self._storage.is_none() {
+                Some(self.database_path.to_string_lossy().into_owned())
+            } else {
+                None
+            },
+            sources,
+        })
+    }
+
+    /// Append a source atomically. Raw source bytes, including terminators and invalid
     /// UTF-8, are retained. Cancellation/error preserves the previous session.
     pub fn import(
         &mut self,
         path: &Path,
         mode: ParserMode,
         cancelled: &AtomicBool,
+        progress: impl FnMut(ImportProgress),
+    ) -> Result<SourceSummary, EngineError> {
+        self.import_with_identity(path, mode, cancelled, progress, None)
+    }
+
+    pub fn import_with_identity(
+        &mut self,
+        path: &Path,
+        mode: ParserMode,
+        cancelled: &AtomicBool,
         mut progress: impl FnMut(ImportProgress),
+        identity: Option<(&str, &str)>,
     ) -> Result<SourceSummary, EngineError> {
         if !std::fs::metadata(path)?.is_file() {
             return Err(EngineError::NotRegularFile);
@@ -176,6 +344,7 @@ impl Engine {
         {
             return Err(EngineError::UnsupportedFormat);
         }
+        let mut has_attributes = false;
         let mut buffer = Vec::with_capacity(4096);
         let mut hash = Sha256::new();
         let (
@@ -188,10 +357,20 @@ impl Engine {
             mut unparsed,
         ) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
 
-        self.connection.execute_batch("BEGIN TRANSACTION;")?;
+        let source_id: i64 = self.connection()?.query_row(
+            "SELECT coalesce(max(id), 0) + 1 FROM sources",
+            [],
+            |row| row.get(0),
+        )?;
+        let first_id: i64 =
+            self.connection()?
+                .query_row("SELECT coalesce(max(id), 0) FROM events", [], |row| {
+                    row.get(0)
+                })?;
+        self.connection()?.execute_batch("BEGIN TRANSACTION;")?;
         let result = (|| {
-            self.connection.execute_batch("DELETE FROM events;")?;
-            let mut appender = self.connection.appender("events")?;
+            let mut appender = self.connection()?.appender("events")?;
+            let mut attributes = self.connection()?.appender("event_attributes")?;
             progress(ImportProgress {
                 bytes_read: 0,
                 total_bytes,
@@ -231,8 +410,27 @@ impl Engine {
                 unparsed += u64::from(fields.parse_status == ParseStatus::Unparsed);
                 text += u64::from(fields.parser == "text");
                 warnings += u64::from(fields.parse_error.is_some());
+                let json_fields = fields
+                    .json_fields
+                    .as_ref()
+                    .map(|object| serde_json::Value::Object(object.clone()).to_string());
+                if let Some(object) = &fields.json_fields {
+                    for (key, value) in object {
+                        let scalar = match value {
+                            serde_json::Value::String(value) => Some(value.clone()),
+                            serde_json::Value::Number(_) | serde_json::Value::Bool(_) => {
+                                Some(value.to_string())
+                            }
+                            _ => None,
+                        };
+                        if let Some(value) = scalar {
+                            has_attributes = true;
+                            attributes.append_row(params![first_id + lines as i64, key, value])?;
+                        }
+                    }
+                }
                 appender.append_row(params![
-                    lines as i64,
+                    first_id + lines as i64,
                     lines as i64,
                     bytes_read as i64,
                     buffer.as_slice(),
@@ -250,6 +448,8 @@ impl Engine {
                     fields.user_agent,
                     fields.parse_error,
                     fields.parse_status.as_str(),
+                    source_id,
+                    json_fields,
                 ])?;
                 bytes_read += size as u64;
                 if last_progress.elapsed() >= Duration::from_millis(100) {
@@ -264,6 +464,8 @@ impl Engine {
             }
             appender.flush()?;
             drop(appender);
+            attributes.flush()?;
+            drop(attributes);
             if cancelled.load(Ordering::Relaxed) {
                 return Err(EngineError::Cancelled);
             }
@@ -274,14 +476,47 @@ impl Engine {
             {
                 return Err(EngineError::SourceChanged);
             }
-            self.connection.execute_batch("COMMIT;")?;
-            Ok(())
+            let summary = SourceSummary {
+                id: source_id as u64,
+                provenance: identity
+                    .map(|(_, provenance)| provenance.to_string())
+                    .unwrap_or_else(|| path.to_string_lossy().into_owned()),
+                parser_mode: mode,
+                partial_events: partial,
+                unparsed_events: unparsed,
+                name: identity
+                    .map(|(name, _)| name.to_string())
+                    .unwrap_or_else(|| {
+                        path.file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned()
+                    }),
+                total_bytes,
+                total_events: lines,
+                parsed_events: parsed,
+                text_events: text,
+                warning_events: warnings,
+                sha256: format!("{:x}", hash.finalize()),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            };
+            let serialized =
+                serde_json::to_string(&summary).map_err(|_| EngineError::UnsupportedCase)?;
+            self.connection()?.execute(
+                "INSERT INTO sources VALUES (?, ?)",
+                params![source_id, serialized],
+            )?;
+            self.connection()?.execute_batch("COMMIT;")?;
+            Ok(summary)
         })();
-        if let Err(error) = result {
-            // Rollback must complete before the connection can be reused.
-            self.connection.execute_batch("ROLLBACK;")?;
-            return Err(error);
-        }
+        let summary = match result {
+            Ok(summary) => summary,
+            Err(error) => {
+                self.connection()?.execute_batch("ROLLBACK;")?;
+                return Err(error);
+            }
+        };
+        self.has_json_attributes |= has_attributes;
         self.statistics_cache.borrow_mut().clear();
         progress(ImportProgress {
             bytes_read,
@@ -289,29 +524,12 @@ impl Engine {
             lines_read: lines,
             elapsed_ms: started.elapsed().as_millis() as u64,
         });
-        Ok(SourceSummary {
-            provenance: path.to_string_lossy().into_owned(),
-            parser_mode: mode,
-            partial_events: partial,
-            unparsed_events: unparsed,
-            name: path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
-            total_bytes,
-            total_events: lines,
-            parsed_events: parsed,
-            text_events: text,
-            warning_events: warnings,
-            sha256: format!("{:x}", hash.finalize()),
-            elapsed_ms: started.elapsed().as_millis() as u64,
-        })
+        Ok(summary)
     }
 
     pub fn query(&self, query: &Query) -> Result<QueryPage, EngineError> {
         let started = Instant::now();
-        let (predicate, values) = query.predicate()?;
+        let (predicate, values) = query.predicate_with_json(self.has_json_attributes)?;
         let cached = self
             .statistics_cache
             .borrow()
@@ -321,7 +539,7 @@ impl Engine {
         let statistics = match cached {
             Some(stats) => stats,
             None => {
-                let stats = statistics(&self.connection, &predicate, &values)?;
+                let stats = statistics(self.connection()?, &predicate, &values)?;
                 let mut cache = self.statistics_cache.borrow_mut();
                 if cache.len() == 4 {
                     cache.pop_front();
@@ -332,7 +550,7 @@ impl Engine {
         };
         let total = statistics.total;
         let rows = if query.is_original_order() {
-            let mut statement = self.connection.prepare(&format!(
+            let mut statement = self.connection()?.prepare(&format!(
                 "SELECT {LIST_COLUMNS} FROM events WHERE id > ? ORDER BY id LIMIT ?"
             ))?;
             statement
@@ -340,7 +558,7 @@ impl Engine {
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             let direction = if query.descending { "DESC" } else { "ASC" };
-            let mut statement = self.connection.prepare(&format!(
+            let mut statement = self.connection()?.prepare(&format!(
                 "SELECT {LIST_COLUMNS} FROM events WHERE {predicate} ORDER BY {} {direction} NULLS LAST, id ASC LIMIT ? OFFSET ?",
                 query.sort_by.sql()
             ))?;
@@ -365,18 +583,18 @@ impl Engine {
         if id > i64::MAX as u64 {
             return Err(EngineError::EventNotFound);
         }
-        let mut statement = self.connection.prepare(
+        let mut statement = self.connection()?.prepare(
             "SELECT id, line_number, byte_offset, substring(message, 1, 240), parser,
                     timestamp, timestamp_ms, source_ip, method, path, protocol, status,
-                    response_bytes, referrer, user_agent, parse_error, parse_status, message, raw
+                    response_bytes, referrer, user_agent, parse_error, parse_status, source_id, json_fields, message, raw
              FROM events WHERE id = ?",
         )?;
         let mut rows = statement.query(params![id as i64])?;
         let row = rows.next()?.ok_or(EngineError::EventNotFound)?;
-        let raw_bytes: Vec<u8> = row.get(18)?;
+        let raw_bytes: Vec<u8> = row.get(20)?;
         Ok(EventDetail {
             event: event_row(row)?,
-            raw: row.get(17)?,
+            raw: row.get(19)?,
             raw_hex: std::str::from_utf8(&raw_bytes)
                 .err()
                 .map(|_| raw_bytes.iter().map(|byte| format!("{byte:02x}")).collect()),
@@ -386,6 +604,7 @@ impl Engine {
 
 fn event_row(row: &duckdb::Row<'_>) -> duckdb::Result<EventRow> {
     Ok(EventRow {
+        source_id: row.get::<_, i64>(17)? as u64,
         id: row.get::<_, i64>(0)? as u64,
         line_number: row.get::<_, i64>(1)? as u64,
         byte_offset: row.get::<_, i64>(2)? as u64,
@@ -408,6 +627,9 @@ fn event_row(row: &duckdb::Row<'_>) -> duckdb::Result<EventRow> {
             referrer: row.get(13)?,
             user_agent: row.get(14)?,
             parse_error: row.get(15)?,
+            json_fields: row
+                .get::<_, Option<String>>(18)?
+                .and_then(|value| serde_json::from_str(&value).ok()),
         },
     })
 }
@@ -426,7 +648,8 @@ mod security_tests {
             "allow_community_extensions",
         ] {
             let enabled: bool = engine
-                .connection
+                .connection()
+                .unwrap()
                 .query_row(&format!("SELECT current_setting('{setting}')"), [], |row| {
                     row.get(0)
                 })
@@ -435,7 +658,8 @@ mod security_tests {
         }
         let source = tempfile::NamedTempFile::new().unwrap();
         assert!(engine
-            .connection
+            .connection()
+            .unwrap()
             .query_row(
                 "SELECT content FROM read_text(?)",
                 params![source.path().to_str().unwrap()],
@@ -443,7 +667,8 @@ mod security_tests {
             )
             .is_err());
         assert!(engine
-            .connection
+            .connection()
+            .unwrap()
             .execute_batch("SET enable_external_access = true")
             .is_err());
     }

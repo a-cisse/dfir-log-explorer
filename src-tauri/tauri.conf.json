@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DFIR Log Explorer",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "identifier": "io.github.a-cisse.dfir-log-explorer",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -23,6 +23,9 @@
     "shortDescription": "Local log analysis for investigations",
     "category": "DeveloperTool",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
-    "windows": { "webviewInstallMode": { "type": "offlineInstaller" } }
+    "windows": {
+      "nsis": { "installMode": "currentUser", "installerHooks": "user-install.nsh" },
+      "webviewInstallMode": { "type": "offlineInstaller" }
+    }
   }
 }

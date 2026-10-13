@@ -15,9 +15,10 @@ import {
 } from "lucide-react";
 import { displayTimestamp, formatBytes } from "./format";
 import { ParsingStatusBadge } from "./ParsingStatusBadge";
-import { usePreference } from "./preferences";
-import type { EventRow, SortField } from "./types";
+import { usePreference, readPreference } from "./preferences";
+import type { EventRow, SortField, SourceSummary } from "./types";
 const columnOptions: { key: SortField; label: string; size: number }[] = [
+  { key: "sourceId", label: "Source", size: 200 },
   { key: "lineNumber", label: "Line", size: 64 },
   { key: "timestamp", label: "Timestamp / source offset", size: 242 },
   { key: "sourceIp", label: "Client IP", size: 142 },
@@ -33,6 +34,12 @@ const columnOptions: { key: SortField; label: string; size: number }[] = [
 const defaultColumns: SortField[] = [
   "lineNumber",
   "timestamp",
+  "parseStatus",
+  "preview",
+];
+const previousDefault = [
+  "lineNumber",
+  "timestamp",
   "sourceIp",
   "method",
   "path",
@@ -40,7 +47,9 @@ const defaultColumns: SortField[] = [
   "parseStatus",
   "preview",
 ];
+
 interface Props {
+  sources: SourceSummary[];
   rows: EventRow[];
   selectedId: number | null;
   onSelect: (row: EventRow) => void;
@@ -51,6 +60,7 @@ interface Props {
   onSort: (key: SortField) => void;
 }
 export function EventTable({
+  sources,
   rows,
   selectedId,
   onSelect,
@@ -62,13 +72,25 @@ export function EventTable({
 }: Props) {
   const parent = useRef<HTMLDivElement>(null);
   const [configuring, setConfiguring] = useState(false);
-  const [visible, setVisible] = usePreference<SortField[]>(
+  const validColumns = (v: unknown): v is SortField[] =>
+    Array.isArray(v) &&
+    v.includes("lineNumber") &&
+    v.every((key) => columnOptions.some((c) => c.key === key));
+  const migratedColumns = readPreference<SortField[]>(
     "columns",
     defaultColumns,
     (v): v is SortField[] =>
-      Array.isArray(v) &&
-      v.includes("lineNumber") &&
-      v.every((k) => columnOptions.some((c) => c.key === k)),
+      validColumns(v) &&
+      ![previousDefault, ["sourceId", ...previousDefault]].some(
+        (previous) =>
+          previous.length === v.length &&
+          previous.every((key, i) => key === v[i]),
+      ),
+  );
+  const [visible, setVisible] = usePreference<SortField[]>(
+    "columns.v2",
+    migratedColumns,
+    validColumns,
   );
   const columns = useMemo<ColumnDef<EventRow>[]>(
     () =>
@@ -79,6 +101,16 @@ export function EventTable({
         size: c.size,
         cell: ({ getValue }) => {
           const value = getValue<string | number | null>();
+          if (c.key === "sourceId")
+            return (
+              <span
+                className="cell-value"
+                title={sources.find((s) => s.id === value)?.provenance}
+              >
+                #{value} ·{" "}
+                {sources.find((s) => s.id === value)?.name ?? "Unknown source"}
+              </span>
+            );
           if (c.key === "parseStatus")
             return (
               <ParsingStatusBadge status={value as EventRow["parseStatus"]} />
@@ -116,7 +148,7 @@ export function EventTable({
           );
         },
       })),
-    [],
+    [sources],
   );
   const table = useReactTable({
     data: rows,
@@ -124,7 +156,11 @@ export function EventTable({
     getCoreRowModel: getCoreRowModel(),
     state: {
       columnVisibility: Object.fromEntries(
-        columnOptions.map((c) => [c.key, visible.includes(c.key)]),
+        columnOptions.map((c) => [
+          c.key,
+          visible.includes(c.key) ||
+            (c.key === "sourceId" && sources.length > 1),
+        ]),
       ),
     },
   });
@@ -140,7 +176,9 @@ export function EventTable({
   }, [rows]);
   const grid = table
     .getVisibleLeafColumns()
-    .map((c) => `${c.getSize()}px`)
+    .map((c) =>
+      c.id === "preview" ? `minmax(${c.getSize()}px, 1fr)` : `${c.getSize()}px`,
+    )
     .join(" ");
   const width = table.getTotalSize();
   function focusRow(index: number) {
@@ -182,8 +220,14 @@ export function EventTable({
                 <label key={c.key}>
                   <input
                     type="checkbox"
-                    checked={visible.includes(c.key)}
-                    disabled={c.key === "lineNumber"}
+                    checked={
+                      visible.includes(c.key) ||
+                      (c.key === "sourceId" && sources.length > 1)
+                    }
+                    disabled={
+                      c.key === "lineNumber" ||
+                      (c.key === "sourceId" && sources.length > 1)
+                    }
                     onChange={(e) =>
                       setVisible(
                         e.target.checked

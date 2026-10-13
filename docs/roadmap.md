@@ -15,3 +15,7 @@ Each MVP is delivered as an independently testable build with documented scope, 
 The requested MVP 0 UI/UX redesign brings basic structured/status/time filters, global sorting, exact statistics and an interactive bounded timeline forward into MVP 0. Persistent cases, additional readers, saved searches and exports remain outside this redesign.
 
 The sequence may be adjusted after MVP 0 feedback. Performance work is also permitted within each MVP when necessary to meet that MVP's acceptance criteria; it is not deferred wholesale to MVP 5.
+
+## Current delivery
+
+MVP 0 was explicitly accepted by the user on 2026-10-13, including its UI/UX redesign. MVP 1 development is authorized. Version 0.2.1 implements persistent local cases, atomic multiple-source append, explicit Nginx access and JSON Lines readers, source/parser/timestamp-presence/JSON-field filters, and documented timestamp normalization. Pre-merge feedback simplified the default workspace around the log table, moved statistics and additional controls on demand, aligned the application icon and flattened download archives. See [MVP 1 acceptance](mvp-1-acceptance.md) and the [minimal workspace report](minimal-workspace.md). MVP 1 must be explicitly accepted before MVP 2 begins.

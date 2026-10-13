@@ -9,6 +9,8 @@ pub enum ParserMode {
     #[default]
     Auto,
     Apache,
+    Nginx,
+    JsonLines,
     Text,
 }
 
@@ -47,6 +49,8 @@ pub struct ParsedFields {
     pub referrer: Option<String>,
     pub user_agent: Option<String>,
     pub parse_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub json_fields: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 fn apache_pattern() -> &'static Regex {
@@ -66,16 +70,26 @@ pub fn parse_line(line: &str, mode: ParserMode) -> ParsedFields {
         fields.parse_status = ParseStatus::Parsed;
         return fields;
     }
+    if mode == ParserMode::JsonLines
+        || (mode == ParserMode::Auto && line.trim_start().starts_with('{'))
+    {
+        return parse_json(line);
+    }
     let Some(captures) = apache_pattern().captures(line) else {
-        if mode == ParserMode::Apache {
+        if matches!(mode, ParserMode::Apache | ParserMode::Nginx) {
             fields.parser = "unparsed".into();
             fields.parse_error =
-                Some("Line does not match Apache Common or Combined format.".into());
+                Some("Line does not match the selected Common/Combined access format.".into());
         }
         return fields;
     };
     // Validate independently so a bad required field cannot erase valid evidence.
-    fields.parser = "apache".into();
+    fields.parser = if mode == ParserMode::Nginx {
+        "nginx"
+    } else {
+        "apache"
+    }
+    .into();
     fields.source_ip = Some(captures["host"].into());
     fields.referrer = captures.name("referrer").map(|v| v.as_str().into());
     fields.user_agent = captures.name("agent").map(|v| v.as_str().into());
@@ -116,6 +130,182 @@ pub fn parse_line(line: &str, mode: ParserMode) -> ParsedFields {
     if !errors.is_empty() {
         fields.parse_error = Some(errors.join(" "));
     }
+    fields
+}
+
+/// JSON Lines objects retain every original field; normalization only uses the
+/// documented aliases. No local timezone or epoch unit is guessed.
+fn parse_json(line: &str) -> ParsedFields {
+    let mut fields = ParsedFields {
+        parser: "json_lines".into(),
+        ..Default::default()
+    };
+    struct JsonObject {
+        fields: serde_json::Map<String, serde_json::Value>,
+        duplicate: bool,
+    }
+    impl<'de> Deserialize<'de> for JsonObject {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Visitor;
+            impl<'de> serde::de::Visitor<'de> for Visitor {
+                type Value = JsonObject;
+                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    formatter.write_str("a JSON object")
+                }
+                fn visit_map<M: serde::de::MapAccess<'de>>(
+                    self,
+                    mut map: M,
+                ) -> Result<Self::Value, M::Error> {
+                    let mut fields = serde_json::Map::new();
+                    let mut duplicate = false;
+                    while let Some((key, value)) = map.next_entry::<String, serde_json::Value>()? {
+                        duplicate |= fields.insert(key, value).is_some();
+                    }
+                    Ok(JsonObject { fields, duplicate })
+                }
+            }
+            deserializer.deserialize_map(Visitor)
+        }
+    }
+    let Ok(parsed) = serde_json::from_str::<JsonObject>(line) else {
+        fields.parse_error = Some("Expected one valid JSON object per line.".into());
+        return fields;
+    };
+    let object = parsed.fields;
+    let mut errors = Vec::new();
+    if parsed.duplicate {
+        errors.push("Duplicate top-level JSON keys; extracted values use the last occurrence. Original raw values are retained.".into());
+    }
+    fn selected<'a>(
+        object: &'a serde_json::Map<String, serde_json::Value>,
+        keys: &[&str],
+    ) -> Option<&'a serde_json::Value> {
+        keys.iter()
+            .find_map(|key| object.get(*key).filter(|v| !v.is_null()))
+    }
+    fn string(
+        object: &serde_json::Map<String, serde_json::Value>,
+        keys: &[&str],
+        errors: &mut Vec<String>,
+    ) -> Option<String> {
+        selected(object, keys).and_then(|v| match v.as_str() {
+            Some(value) => Some(value.into()),
+            None => {
+                errors.push(format!("{} must be a string.", keys[0]));
+                None
+            }
+        })
+    }
+    fn integer(
+        object: &serde_json::Map<String, serde_json::Value>,
+        keys: &[&str],
+        errors: &mut Vec<String>,
+    ) -> Option<i64> {
+        selected(object, keys).and_then(|v| {
+            match v
+                .as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            {
+                Some(value) => Some(value),
+                None => {
+                    errors.push(format!(
+                        "{} must be an integer in the supported range.",
+                        keys[0]
+                    ));
+                    None
+                }
+            }
+        })
+    }
+    fields.source_ip = string(
+        &object,
+        &["sourceIp", "source_ip", "remote_addr", "client_ip"],
+        &mut errors,
+    );
+    fields.method = string(&object, &["method", "request_method"], &mut errors);
+    fields.path = string(&object, &["path", "request_uri", "url"], &mut errors);
+    fields.protocol = string(&object, &["protocol", "server_protocol"], &mut errors);
+    fields.referrer = string(&object, &["referrer", "http_referer"], &mut errors);
+    fields.user_agent = string(
+        &object,
+        &["userAgent", "user_agent", "http_user_agent"],
+        &mut errors,
+    );
+    if let Some(status) = integer(&object, &["status"], &mut errors) {
+        if (100..=599).contains(&status) {
+            fields.status = Some(status as i32);
+        } else {
+            errors.push("HTTP status must be between 100 and 599.".into());
+        }
+    }
+    if let Some(bytes) = integer(
+        &object,
+        &["responseBytes", "response_bytes", "body_bytes_sent"],
+        &mut errors,
+    ) {
+        if bytes >= 0 {
+            fields.response_bytes = Some(bytes);
+        } else {
+            errors.push("Response bytes cannot be negative.".into());
+        }
+    }
+    let timestamp_keys = [
+        "timestamp",
+        "@timestamp",
+        "time_iso8601",
+        "time",
+        "time_local",
+    ];
+    let text_time = string(&object, &timestamp_keys, &mut errors);
+    if let Some(value) = text_time {
+        let time = DateTime::parse_from_rfc3339(&value)
+            .or_else(|_| DateTime::parse_from_str(&value, "%d/%b/%Y:%H:%M:%S %z"));
+        match time {
+            Ok(time) if time.timestamp_millis().abs_diff(0) <= 8_640_000_000_000_000 => {
+                fields.timestamp = Some(time.to_rfc3339());
+                fields.timestamp_ms = Some(time.timestamp_millis());
+            }
+            _ => errors.push(
+                "Timestamp requires a valid RFC 3339 or access-log date with an explicit offset."
+                    .into(),
+            ),
+        }
+    } else if selected(&object, &timestamp_keys).is_none() {
+        if let Some(ms) = integer(&object, &["timestamp_ms"], &mut errors) {
+            match DateTime::from_timestamp_millis(ms)
+                .filter(|_| ms.abs_diff(0) <= 8_640_000_000_000_000)
+            {
+                Some(time) => {
+                    fields.timestamp = Some(time.to_rfc3339());
+                    fields.timestamp_ms = Some(ms);
+                }
+                None => errors.push("timestamp_ms is outside the supported date range.".into()),
+            }
+        }
+    }
+    if fields.method.is_none() && fields.path.is_none() && fields.protocol.is_none() {
+        if let Some(request) =
+            string(&object, &["request"], &mut errors).filter(|request| request != "-")
+        {
+            let parts: Vec<_> = request.split_whitespace().collect();
+            if parts.len() == 3 && parts[2].starts_with("HTTP/") {
+                fields.method = Some(parts[0].into());
+                fields.path = Some(parts[1].into());
+                fields.protocol = Some(parts[2].into());
+            } else {
+                errors.push("Invalid JSON HTTP request field.".into());
+            }
+        }
+    }
+    fields.parse_status = if errors.is_empty() {
+        ParseStatus::Parsed
+    } else {
+        ParseStatus::Partial
+    };
+    if !errors.is_empty() {
+        fields.parse_error = Some(errors.join(" "));
+    }
+    fields.json_fields = Some(object);
     fields
 }
 

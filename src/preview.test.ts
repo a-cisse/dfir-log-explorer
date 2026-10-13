@@ -100,3 +100,29 @@ it("filters, sorts and aggregates the complete synthetic source consistently", a
     previewBridge.query({ ...base, timeFrom: 2, timeTo: 1 }),
   ).rejects.toThrow("Invalid query");
 });
+
+it("keeps persistent cases behind the native bridge and combines source/date/parser filters", async () => {
+  await previewBridge.closeCase();
+  expect((await previewBridge.caseSummary()).sources).toEqual([]);
+  await expect(previewBridge.saveCase()).rejects.toThrow("desktop application");
+  await expect(previewBridge.openCase()).rejects.toThrow("desktop application");
+  await previewBridge.importDemo(() => {});
+  expect((await previewBridge.caseSummary()).sources[0].id).toBe(1);
+  const base = { search: "", onlyWarnings: false, offset: 0, limit: 500 };
+  expect((await previewBridge.query({ ...base, sourceId: 999 })).total).toBe(0);
+  expect(
+    (
+      await previewBridge.query({
+        ...base,
+        sourceId: 1,
+        parser: "apache",
+        hasTimestamp: false,
+      })
+    ).total,
+  ).toBe(1);
+  expect((await previewBridge.query({ ...base, parser: "nginx" })).total).toBe(
+    0,
+  );
+  await previewBridge.closeCase();
+  expect((await previewBridge.query(base)).total).toBe(0);
+});

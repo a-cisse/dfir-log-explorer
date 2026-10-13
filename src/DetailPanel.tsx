@@ -13,6 +13,7 @@ import { ParsingStatusBadge } from "./ParsingStatusBadge";
 import type {
   EventDetail,
   FieldFilter,
+  JsonFilter,
   ParseStatus,
   SearchField,
   SourceSummary,
@@ -23,6 +24,7 @@ export function DetailPanel({
   source,
   onClose,
   onFilter,
+  onJsonFilter,
   onParsingFilter,
   onNavigate,
   hasPrevious,
@@ -33,6 +35,7 @@ export function DetailPanel({
   source: SourceSummary;
   onClose: () => void;
   onFilter: (filter: FieldFilter) => void;
+  onJsonFilter: (filter: JsonFilter) => void;
   onParsingFilter: (status: ParseStatus) => void;
   onNavigate: (direction: number) => void;
   hasPrevious: boolean;
@@ -143,13 +146,7 @@ export function DetailPanel({
       </div>
       <div className="detail-meta">
         <ParsingStatusBadge status={detail.parseStatus} />
-        <span className="parser-tag">
-          {detail.parser === "apache"
-            ? "Apache Access"
-            : detail.parser === "text"
-              ? "Plain text"
-              : "Apache · no match"}
-        </span>
+        <span className="parser-tag">{detail.parser.replaceAll("_", " ")}</span>
         <span className="mono">Offset {detail.byteOffset} B</span>
       </div>
       <div
@@ -255,13 +252,7 @@ export function DetailPanel({
             <dl className="field-list">
               <div>
                 <dt>Selected parser</dt>
-                <dd>
-                  {source.parserMode === "auto"
-                    ? "Auto detect · Apache / plain text"
-                    : source.parserMode === "apache"
-                      ? "Apache Common / Combined"
-                      : "Plain text reader"}
-                </dd>
+                <dd>{source.parserMode.replaceAll("_", " ")}</dd>
               </div>
               <div>
                 <dt>Parser identified</dt>
@@ -299,7 +290,11 @@ export function DetailPanel({
         )}
         <div className="event-provenance">
           <h3>Provenance</h3>
-          <span>{source.name}</span>
+          <span>
+            Source #{source.id} · {source.name}
+          </span>
+          <span>{source.provenance}</span>
+          <small className="mono">SHA-256: {source.sha256}</small>
           <span>
             Source line {detail.lineNumber} · byte offset {detail.byteOffset}
           </span>

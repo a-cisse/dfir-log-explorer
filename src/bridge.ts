@@ -3,6 +3,10 @@ import type { Bridge, ImportProgress, SourceSummary } from "./types";
 
 const desktopBridge: Bridge = {
   isDesktop: true,
+  caseSummary: () => invoke("case_summary"),
+  saveCase: () => invoke("save_case"),
+  openCase: () => invoke("open_case"),
+  closeCase: () => invoke("close_case"),
   pickFile: () => invoke("pick_file"),
   importFile: (mode, handler) => {
     const onProgress = new Channel<ImportProgress>();

@@ -19,7 +19,9 @@ export function LogSourceHeader({
         <span title={source.provenance}>{source.provenance}</span>
       </div>
       <span className="parser-tag">
-        {parsers.find((p) => p.mode === source.parserMode)?.name}
+        {source.id === 0
+          ? "Multiple readers"
+          : parsers.find((p) => p.mode === source.parserMode)?.name}
       </span>
       <span className="source-facts">
         {formatBytes(source.totalBytes)}
