@@ -28,6 +28,10 @@ export function ParsingSummary({
   };
   return (
     <div className="summary-section">
+      <div className="statistics-section-heading">
+        <h3>Parsing quality</h3>
+        <p>Source totals · select a status to filter the logs.</p>
+      </div>
       <div className="parsing-summary" aria-label="Source parsing statistics">
         <button
           disabled={disabled}
@@ -70,6 +74,12 @@ export function ParsingSummary({
           <strong>{formatNumber(source.warningEvents)}</strong>
           <small>Counted independently</small>
         </div>
+      </div>
+      <div className="statistics-section-heading http-heading">
+        <h3>HTTP activity</h3>
+        <p>
+          {filtered ? "Matching events · current filters" : "All source events"}
+        </p>
       </div>
       {available ? (
         <div className="http-statistics" aria-label="Filtered HTTP statistics">

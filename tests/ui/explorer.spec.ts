@@ -464,3 +464,128 @@ test("case controls, source provenance and timestamp filters are usable", async 
   await page.getByRole("button", { name: "Case actions" }).click();
   await expect(page.getByLabel("Case management")).toContainText("0 sources");
 });
+
+test("Statistics keeps the timeline readable at desktop sizes and in both themes", async ({
+  page,
+}) => {
+  await loadSample(page);
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Statistics", exact: true }),
+  ).toHaveCount(1);
+  const timeline = page.getByLabel("Event timeline");
+  await expect(timeline).toContainText("11 timestamped events");
+  await expect(page.getByLabel("Distribution legend")).toContainText(
+    "Parsed 11",
+  );
+  for (const theme of ["light", "dark"]) {
+    await page
+      .getByRole("combobox", { name: "Theme preference" })
+      .selectOption(theme);
+    for (const viewport of [
+      { width: 1440, height: 940 },
+      { width: 1280, height: 720 },
+      { width: 1000, height: 650 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const plot = await page.locator(".histogram").boundingBox();
+      expect(plot!.height).toBeGreaterThanOrEqual(240);
+      expect(plot!.width).toBeGreaterThan(viewport.width * 0.65);
+      expect(
+        await page
+          .getByLabel("Time scale in UTC")
+          .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+      ).toBeGreaterThanOrEqual(11);
+      for (const tick of await page.locator(".timeline-axis > span").all()) {
+        expect((await tick.boundingBox())!.height).toBeLessThanOrEqual(40);
+      }
+      await page.getByLabel("Distribution legend").scrollIntoViewIfNeeded();
+      await expect(page.getByLabel("Distribution legend")).toBeInViewport();
+      await page
+        .getByLabel("Source parsing statistics")
+        .scrollIntoViewIfNeeded();
+      const total = page.locator(".summary-total strong");
+      await expect(total).toBeInViewport();
+      expect(
+        await total.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+      ).toBeGreaterThanOrEqual(26);
+      await page
+        .getByLabel("Filtered HTTP statistics")
+        .scrollIntoViewIfNeeded();
+      await expect(
+        page.getByLabel("Filtered HTTP statistics"),
+      ).toBeInViewport();
+      expect(
+        await page.evaluate(() => ({
+          width: document.documentElement.scrollWidth,
+          height: document.documentElement.scrollHeight,
+        })),
+      ).toEqual(viewport);
+      expect(
+        await page
+          .locator(".statistics-view")
+          .evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true);
+    }
+  }
+});
+
+test("timeline details support hover, keyboard selection and filtered empty states", async ({
+  page,
+}) => {
+  await loadSample(page);
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
+  const first = page
+    .getByRole("button", { name: "Filter interval", exact: false })
+    .first();
+  const details = page.getByLabel("Interval details");
+  await first.hover();
+  await expect(details).toContainText("Parsed: 1");
+  await expect(details).toContainText("2026-10-13 07:14:22 UTC");
+  await page.getByRole("heading", { name: "Statistics", exact: true }).hover();
+  await expect(details).toContainText("Hover or focus");
+  await page.getByLabel("Timeline distribution").selectOption("http");
+  await expect(page.getByLabel("Distribution legend")).toContainText("2xx 6");
+  await first.focus();
+  await expect(details).toContainText("2xx: 1");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("1–1 of 1 events")).toBeVisible();
+  await expect(page.locator(".filter-chips")).toContainText("UTC");
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
+  await expect(page.getByLabel("Event timeline")).toContainText(
+    "Matching events · current filters",
+  );
+  await expect(page.getByLabel("Event timeline")).toContainText(
+    "1 timestamped events",
+  );
+  await expect(page.getByLabel("Source parsing statistics")).toContainText(
+    "13",
+  );
+  await expect(page.getByLabel("Filtered HTTP statistics")).toContainText(
+    "1 requests",
+  );
+  await page.getByRole("button", { name: "Back to logs" }).click();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Search logs" })
+    .fill("no such evidence");
+  await expect(page.getByText("0–0 of 0 events")).toBeVisible();
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
+  await expect(page.getByLabel("Event timeline")).toContainText(
+    "No events match the current filters",
+  );
+  await expect(page.locator(".histogram")).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to logs" }).click();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await page
+    .getByLabel("Parsing status filters")
+    .getByRole("button", { name: "Unparsed", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Statistics", exact: true }).click();
+  await expect(page.getByLabel("Event timeline")).toContainText(
+    "1 without valid timestamp",
+  );
+  await expect(page.getByLabel("Event timeline")).toContainText(
+    "No valid timestamps in these results",
+  );
+});
