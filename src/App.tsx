@@ -852,6 +852,16 @@ export function App({ bridge }: { bridge: Bridge }) {
                   source={source}
                   onEvidence={() => navigate("Evidence")}
                 />
+                <ParsingSummary
+                  source={source}
+                  disabled={busy}
+                  stats={page.statistics}
+                  available={pageAvailable && !loading && !busy}
+                  pending={loading || busy}
+                  filtered={filtered}
+                  active={parseStatus}
+                  onFilter={statusFilter}
+                />
                 <TimelineChart
                   stats={page.statistics}
                   filtered={filtered}
@@ -862,16 +872,6 @@ export function App({ bridge }: { bridge: Bridge }) {
                     rangeFilter([from, to]);
                     setView("Explore");
                   }}
-                />
-                <ParsingSummary
-                  source={source}
-                  disabled={busy}
-                  stats={page.statistics}
-                  available={pageAvailable && !loading && !busy}
-                  pending={loading || busy}
-                  filtered={filtered}
-                  active={parseStatus}
-                  onFilter={statusFilter}
                 />
               </>
             ) : (

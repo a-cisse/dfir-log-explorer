@@ -2,7 +2,7 @@
 
 This change improves the MVP 1 Statistics page before MVP 2 development.
 
-The timeline is the main visualization, with a 260 px plot instead of the previous 44 px histogram. Whole-count volume ticks, grid lines and five UTC date/time labels make peaks and quiet intervals easier to compare. Short ranges display milliseconds. Parsing and HTTP distributions have visible legends with counts, including at the minimum desktop width. Hovering or focusing an interval shows its exact UTC bounds and distribution; clicking or pressing Enter returns to the matching logs.
+Statistics starts with parsing totals and HTTP activity, followed by the timeline at the end. The timeline retains its 260 px plot instead of the previous 44 px histogram. Whole-count volume ticks, grid lines and five UTC date/time labels make peaks and quiet intervals easier to compare. Short ranges display milliseconds. Parsing and HTTP distributions have visible legends with counts, including at the minimum desktop width. Hovering or focusing an interval shows its exact UTC bounds and distribution; clicking or pressing Enter returns to the matching logs.
 
 Parsing totals now use larger numbers, labels and proportion tracks. Separate headings distinguish source parsing totals from HTTP aggregates and the timeline, which follow the current filters. Timeline legends count only timestamped events; the HTTP chart additionally covers only 2xx–5xx responses. Missing timestamps, empty results and unavailable statistics remain explicit.
 
