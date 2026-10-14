@@ -528,7 +528,9 @@ export function App({ bridge }: { bridge: Bridge }) {
             </span>
           </div>
         )}
-        {view !== "Explore" && <PageHeading view={view} />}
+        {view !== "Explore" && view !== "Statistics" && (
+          <PageHeading view={view} />
+        )}
         {error && (
           <div role="alert" className="message error-message">
             <AlertTriangle size={16} />
@@ -831,15 +833,21 @@ export function App({ bridge }: { bridge: Bridge }) {
           ))}
         {view === "Statistics" && (
           <section className="secondary-view statistics-view">
+            <div className="statistics-heading">
+              <div>
+                <h1>Statistics</h1>
+                <p>Review log volume, parsing quality and HTTP activity.</p>
+              </div>
+              <button
+                className="secondary-button"
+                onClick={() => navigate("Explore")}
+              >
+                <ChevronLeft size={14} />
+                Back to logs
+              </button>
+            </div>
             {source ? (
               <>
-                <button
-                  className="secondary-button"
-                  onClick={() => navigate("Explore")}
-                >
-                  <ChevronLeft size={14} />
-                  Back to logs
-                </button>
                 <LogSourceHeader
                   source={source}
                   onEvidence={() => navigate("Evidence")}
@@ -856,6 +864,7 @@ export function App({ bridge }: { bridge: Bridge }) {
                 />
                 <TimelineChart
                   stats={page.statistics}
+                  filtered={filtered}
                   available={pageAvailable && !loading && !busy}
                   pending={loading || busy}
                   disabled={busy || loading}
