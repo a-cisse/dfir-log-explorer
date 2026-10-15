@@ -67,6 +67,8 @@ fn malformed_syslog_sd_dates_versions_and_duplicates_are_diagnosed() {
         "[id]trailing",
         "[id key=\"a\" key=\"b\"]",
         "[id][id]",
+        "[id\u{0001} key=\"value\"]",
+        "[id key\u{0001}=\"value\"]",
         "[a.b c=\"first\"][a b.c=\"second\"]",
     ] {
         let p = parse_line(

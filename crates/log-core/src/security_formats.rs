@@ -198,8 +198,8 @@ fn structured_data<'a>(
         if !ids.insert(id.to_owned()) {
             errors.push("Duplicate Syslog structured-data ID.".into());
         }
-        if !id.is_ascii() {
-            errors.push("Syslog structured-data names must be ASCII.".into());
+        if !id.bytes().all(|b| (33..=126).contains(&b)) {
+            errors.push("Syslog structured-data names must be printable ASCII.".into());
         }
         let mut keys = HashSet::new();
         for p in parameter.captures_iter(&c["params"]) {
@@ -207,8 +207,8 @@ fn structured_data<'a>(
             if !keys.insert(key.to_owned()) {
                 errors.push("Duplicate Syslog parameter; last value used.".into());
             }
-            if !key.is_ascii() {
-                errors.push("Syslog parameter names must be ASCII.".into());
+            if !key.bytes().all(|b| (33..=126).contains(&b)) {
+                errors.push("Syslog parameter names must be printable ASCII.".into());
             }
             let mut value = String::new();
             let mut chars = p["value"].chars();
