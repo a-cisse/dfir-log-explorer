@@ -1,6 +1,6 @@
 # Incremental deliveries
 
-The active roadmap uses **delivery** (**livraison** in French) instead of MVP. Delivery numbers 0–5 retain their historical meaning; they are not semantic application versions. Existing `mvp-*` file paths, branches, workflow IDs and published review records remain valid historical identifiers.
+The active roadmap uses **delivery** instead of MVP. Delivery numbers 0–5 retain their historical meaning; they are not semantic application versions. Existing `mvp-*` file paths, branches, workflow IDs and published review records remain valid historical identifiers.
 
 Each delivery is independently testable with a documented scope, acceptance criteria, checks and limitations. The user must explicitly accept a delivery **and separately authorize starting the next one**. Pull requests are never merged automatically. A roadmap migration, milestone, Issue, estimate or passing CI does not authorize feature development.
 
@@ -21,11 +21,11 @@ The migration itself is tracked in [#7](https://github.com/a-cisse/dfir-log-expl
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Delivery 0 | Temporary single-source sessions, Apache/text readers, literal search, virtualized pages, raw detail, warnings, progress and cancellation. Its UI redesign also brought basic structured/time filters, global sorting, statistics and a bounded interactive timeline forward. | Correctness, usability, offline operation and measured limits   | Historical [PR #1](https://github.com/a-cisse/dfir-log-explorer/pull/1) and [PR #2](https://github.com/a-cisse/dfir-log-explorer/pull/2); accepted and integrated, no artificial historical tickets                                                             |
 | Delivery 1 | Persistent cases, multiple sources, Nginx/JSON Lines readers, structured filters, timestamp rules and the compact default workspace                                                                                                                                           | Persistence, source management and query reliability            | Historical [PR #3](https://github.com/a-cisse/dfir-log-explorer/pull/3), [README #4](https://github.com/a-cisse/dfir-log-explorer/pull/4) and [Statistics #5](https://github.com/a-cisse/dfir-log-explorer/pull/5), integrated; no recreated historical tickets |
-| Delivery 2 | Syslog RFC 5424/BSD, Netfilter/iptables, HAProxy HTTP and bounded native ModSecurity 2.x audit                                                                                                                                                                                | Verified extraction, provenance and format-specific diagnostics | [Livraison 2 — Lecteurs de journaux de sécurité](https://github.com/a-cisse/dfir-log-explorer/milestone/1); [#8](https://github.com/a-cisse/dfir-log-explorer/issues/8); existing [PR #6](https://github.com/a-cisse/dfir-log-explorer/pull/6) in review        |
-| Delivery 3 | Expanded timeline/statistics investigation workflows and saved searches; the basic timeline/statistics already exist                                                                                                                                                          | Useful investigation workflows beyond the current baseline      | [Livraison 3 — Exploration et recherches enregistrées](https://github.com/a-cisse/dfir-log-explorer/milestone/2); Backlog, not authorized                                                                                                                       |
-| Delivery 4 | Custom local parsing profiles, preview, version history and import using a selected profile                                                                                                                                                                                   | Importing an additional agreed text format transparently        | [Livraison 4 — Profils de parsing locaux](https://github.com/a-cisse/dfir-log-explorer/milestone/3); Backlog, not authorized                                                                                                                                    |
-| Delivery 5 | Representative measurements, measured large-volume optimization, resumable ingestion, compression and exports                                                                                                                                                                 | Stability, correctness, resource use and throughput             | [Livraison 5 — Volumétrie, ingestion et exports](https://github.com/a-cisse/dfir-log-explorer/milestone/4); Backlog, not authorized                                                                                                                             |
-| To explore | Binary readers, correlations and annotations; other needs only after agreement                                                                                                                                                                                                | Explicitly agreed scenarios and scope                           | [À explorer — Évolutions à convenir](https://github.com/a-cisse/dfir-log-explorer/milestone/5); no delivery commitment                                                                                                                                          |
+| Delivery 2 | Syslog RFC 5424/BSD, Netfilter/iptables, HAProxy HTTP and bounded native ModSecurity 2.x audit                                                                                                                                                                                | Verified extraction, provenance and format-specific diagnostics | [Delivery 2 — Security log readers](https://github.com/a-cisse/dfir-log-explorer/milestone/1); [#8](https://github.com/a-cisse/dfir-log-explorer/issues/8); existing [PR #6](https://github.com/a-cisse/dfir-log-explorer/pull/6) in review                     |
+| Delivery 3 | Expanded timeline/statistics investigation workflows and saved searches; the basic timeline/statistics already exist                                                                                                                                                          | Useful investigation workflows beyond the current baseline      | [Delivery 3 — Exploration and saved searches](https://github.com/a-cisse/dfir-log-explorer/milestone/2); Backlog, not authorized                                                                                                                                |
+| Delivery 4 | Custom local parsing profiles, preview, version history and import using a selected profile                                                                                                                                                                                   | Importing an additional agreed text format transparently        | [Delivery 4 — Local parsing profiles](https://github.com/a-cisse/dfir-log-explorer/milestone/3); Backlog, not authorized                                                                                                                                        |
+| Delivery 5 | Representative measurements, measured large-volume optimization, resumable ingestion, compression and exports                                                                                                                                                                 | Stability, correctness, resource use and throughput             | [Delivery 5 — Volume, ingestion and exports](https://github.com/a-cisse/dfir-log-explorer/milestone/4); Backlog, not authorized                                                                                                                                 |
+| To explore | Binary readers, correlations and annotations; other needs only after agreement                                                                                                                                                                                                | Explicitly agreed scenarios and scope                           | [To explore — Future work to agree](https://github.com/a-cisse/dfir-log-explorer/milestone/5); no delivery commitment                                                                                                                                           |
 
 The sequence may be adjusted by explicit agreement. Performance work remains permitted within any authorized delivery when needed to meet its acceptance criteria; it is not all deferred to Delivery 5. The migration does not invent additional reader formats, correlation rules, export formats or deadlines.
 
@@ -41,44 +41,44 @@ Delivery 2 version 0.3.0 is proposed in [PR #6](https://github.com/a-cisse/dfir-
 
 Prerequisites: explicit acceptance of Delivery 2 and a separate instruction to start Delivery 3. First refine the additional timeline/statistics scenarios with the user; do not redo the baseline delivered earlier. Acceptance includes useful investigation paths, consistent filtered results and reopening saved searches.
 
-| Issue                                                         | Proposed work                                                          | Initial points |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------- |
-| [#9](https://github.com/a-cisse/dfir-log-explorer/issues/9)   | Livraison 3 — Étendre les parcours d'investigation de la chronologie   | 5              |
-| [#10](https://github.com/a-cisse/dfir-log-explorer/issues/10) | Livraison 3 — Étendre les statistiques utiles à l'investigation        | 5              |
-| [#11](https://github.com/a-cisse/dfir-log-explorer/issues/11) | Livraison 3 — Enregistrer et réutiliser les recherches dans un dossier | 5              |
+| Issue                                                         | Proposed work                                        | Initial points |
+| ------------------------------------------------------------- | ---------------------------------------------------- | -------------- |
+| [#9](https://github.com/a-cisse/dfir-log-explorer/issues/9)   | Delivery 3 — Extend timeline investigation workflows | 5              |
+| [#10](https://github.com/a-cisse/dfir-log-explorer/issues/10) | Delivery 3 — Extend investigation statistics         | 5              |
+| [#11](https://github.com/a-cisse/dfir-log-explorer/issues/11) | Delivery 3 — Save and reuse searches within a case   | 5              |
 
 ## Delivery 4: local parsing profiles
 
 Prerequisites: acceptance of Delivery 3 and explicit authorization to start Delivery 4. Definition comes before preview/versioning; import depends on all three. Agree the first target format and profile model before implementation. Acceptance must demonstrate an agreed additional text format while preserving raw content, diagnostics and profile-version provenance.
 
-| Issue                                                         | Proposed work                                                       | Initial points |
-| ------------------------------------------------------------- | ------------------------------------------------------------------- | -------------- |
-| [#12](https://github.com/a-cisse/dfir-log-explorer/issues/12) | Livraison 4 — Définir et éditer des profils de parsing locaux       | 5              |
-| [#13](https://github.com/a-cisse/dfir-log-explorer/issues/13) | Livraison 4 — Prévisualiser un profil sur un échantillon de journal | 3              |
-| [#14](https://github.com/a-cisse/dfir-log-explorer/issues/14) | Livraison 4 — Conserver et versionner les profils de parsing        | 3              |
-| [#15](https://github.com/a-cisse/dfir-log-explorer/issues/15) | Livraison 4 — Importer un format texte avec un profil personnalisé  | 5              |
+| Issue                                                         | Proposed work                                            | Initial points |
+| ------------------------------------------------------------- | -------------------------------------------------------- | -------------- |
+| [#12](https://github.com/a-cisse/dfir-log-explorer/issues/12) | Delivery 4 — Define and edit local parsing profiles      | 5              |
+| [#13](https://github.com/a-cisse/dfir-log-explorer/issues/13) | Delivery 4 — Preview a profile on a log sample           | 3              |
+| [#14](https://github.com/a-cisse/dfir-log-explorer/issues/14) | Delivery 4 — Persist and version parsing profiles        | 3              |
+| [#15](https://github.com/a-cisse/dfir-log-explorer/issues/15) | Delivery 4 — Import a text format using a custom profile | 5              |
 
 ## Delivery 5: volume, ingestion and exports
 
 Prerequisites: acceptance of Delivery 4 and explicit authorization to start Delivery 5. Measure before selecting optimizations. Resumable ingestion requires an explicit storage/transaction design; compression/export formats and resource limits need agreement. Do not promise performance targets before measurement.
 
-| Issue                                                         | Proposed work                                                   | Initial points |
-| ------------------------------------------------------------- | --------------------------------------------------------------- | -------------- |
-| [#16](https://github.com/a-cisse/dfir-log-explorer/issues/16) | Livraison 5 — Établir des mesures représentatives de volumétrie | 3              |
-| [#17](https://github.com/a-cisse/dfir-log-explorer/issues/17) | Livraison 5 — Optimiser les goulots mesurés sur gros volumes    | 5              |
-| [#18](https://github.com/a-cisse/dfir-log-explorer/issues/18) | Livraison 5 — Reprendre une ingestion interrompue               | 8              |
-| [#19](https://github.com/a-cisse/dfir-log-explorer/issues/19) | Livraison 5 — Importer des sources compressées prises en charge | 5              |
-| [#20](https://github.com/a-cisse/dfir-log-explorer/issues/20) | Livraison 5 — Exporter les résultats d'investigation            | 5              |
+| Issue                                                         | Proposed work                                             | Initial points |
+| ------------------------------------------------------------- | --------------------------------------------------------- | -------------- |
+| [#16](https://github.com/a-cisse/dfir-log-explorer/issues/16) | Delivery 5 — Establish representative volume measurements | 3              |
+| [#17](https://github.com/a-cisse/dfir-log-explorer/issues/17) | Delivery 5 — Optimize measured large-volume bottlenecks   | 5              |
+| [#18](https://github.com/a-cisse/dfir-log-explorer/issues/18) | Delivery 5 — Resume interrupted ingestion                 | 8              |
+| [#19](https://github.com/a-cisse/dfir-log-explorer/issues/19) | Delivery 5 — Import supported compressed sources          | 5              |
+| [#20](https://github.com/a-cisse/dfir-log-explorer/issues/20) | Delivery 5 — Export investigation results                 | 5              |
 
 ## To explore: uncommitted ideas
 
 These are the existing Later themes, not a new delivery or authorization. The estimates are particularly uncertain; agree a scenario, first supported format where relevant, acceptance boundaries and an assigned delivery before implementation. Do not create a catch-all ticket for unspecified future requirements.
 
-| Issue                                                         | Proposed work                                                 | Initial points |
-| ------------------------------------------------------------- | ------------------------------------------------------------- | -------------- |
-| [#21](https://github.com/a-cisse/dfir-log-explorer/issues/21) | À explorer — Lecteurs de journaux binaires                    | 8              |
-| [#22](https://github.com/a-cisse/dfir-log-explorer/issues/22) | À explorer — Corrélations entre événements d'enquête          | 8              |
-| [#23](https://github.com/a-cisse/dfir-log-explorer/issues/23) | À explorer — Annotations des événements et dossiers d'enquête | 5              |
+| Issue                                                         | Proposed work                                          | Initial points |
+| ------------------------------------------------------------- | ------------------------------------------------------ | -------------- |
+| [#21](https://github.com/a-cisse/dfir-log-explorer/issues/21) | To explore — Binary log readers                        | 8              |
+| [#22](https://github.com/a-cisse/dfir-log-explorer/issues/22) | To explore — Correlations between investigation events | 8              |
+| [#23](https://github.com/a-cisse/dfir-log-explorer/issues/23) | To explore — Investigation event and case annotations  | 5              |
 
 ## Historical terminology and acceptance records
 
